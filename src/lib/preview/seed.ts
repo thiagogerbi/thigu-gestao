@@ -1,0 +1,500 @@
+/**
+ * DADOS FICTÍCIOS da prévia. Nenhuma pessoa, empresa, telefone ou e-mail aqui é real.
+ * As datas são calculadas a partir de "hoje" para que a prévia pareça sempre atual.
+ */
+import { addDays, toISODate } from "@/lib/domain/dates";
+import type { Account, CompanyData, Deal, Member, Movement, Proposal, Sale, Task } from "@/lib/domain/types";
+
+export const PREVIEW_COMPANY_IDS = { aurora: "empresa-aurora", horizonte: "empresa-horizonte" } as const;
+
+export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
+  const today = toISODate(now);
+  const day = (n: number) => addDays(today, n);
+  const at = (n: number, hour = 10) => {
+    const [y, m, d] = day(n).split("-").map(Number);
+    return new Date(y, m - 1, d, hour, 0, 0).toISOString();
+  };
+
+  // ---------- Aurora Estúdio (empresa com dados) ----------
+  const auroraMembers: Member[] = [
+    { userId: "u-ana", name: "Ana Souza", email: "ana@aurora.exemplo", roles: ["admin"] },
+    { userId: "u-bruno", name: "Bruno Lima", email: "bruno@aurora.exemplo", roles: ["vendedor"] },
+    { userId: "u-carla", name: "Carla Mendes", email: "carla@aurora.exemplo", roles: ["financeiro"] },
+    { userId: "u-diego", name: "Diego Rocha", email: "diego@aurora.exemplo", roles: ["gestor"] },
+  ];
+
+  const client = (id: string, name: string, email: string, phone: string, ownerId: string, created: number) => ({
+    id,
+    name,
+    email,
+    phone,
+    ownerId,
+    createdAt: at(created),
+  });
+  const clients = [
+    client("c-marina", "Marina Costa", "marina@cafe-marina.exemplo", "(11) 90000-1001", "u-bruno", -60),
+    client("c-joao", "João Pereira", "joao@paoquente.exemplo", "(11) 90000-1002", "u-bruno", -45),
+    client("c-luciana", "Luciana Ramos", "luciana@ramosadv.exemplo", "(11) 90000-1003", "u-diego", -40),
+    client("c-pedro", "Pedro Henrique", "pedro@oficinaph.exemplo", "(11) 90000-1004", "u-bruno", -20),
+    client("c-sofia", "Sofia Martins", "sofia@bemestar.exemplo", "(11) 90000-1005", "u-bruno", -30),
+    client("c-rafael", "Rafael Gomes", "", "(11) 90000-1006", "u-ana", -2),
+  ];
+
+  const deal = (
+    p: Partial<Deal> & Pick<Deal, "id" | "clientId" | "title" | "valueCents" | "ownerId" | "stage">,
+    changed: number,
+  ): Deal => ({
+    expectedClose: null,
+    nextAction: null,
+    nextActionDate: null,
+    lostReason: null,
+    stageChangedAt: at(changed),
+    createdAt: at(changed - 5),
+    updatedAt: at(changed),
+    ...p,
+  });
+  const deals: Deal[] = [
+    deal(
+      {
+        id: "d-marina",
+        clientId: "c-marina",
+        title: "Identidade visual do Café Marina",
+        valueCents: 150000,
+        ownerId: "u-bruno",
+        stage: "ganha",
+        expectedClose: day(-35),
+      },
+      -35,
+    ),
+    deal(
+      {
+        id: "d-joao-cardapio",
+        clientId: "c-joao",
+        title: "Cardápio digital",
+        valueCents: 240000,
+        ownerId: "u-bruno",
+        stage: "proposta",
+        expectedClose: day(10),
+        nextAction: "Retornar sobre a proposta nº 2",
+        nextActionDate: day(-1),
+      },
+      -4,
+    ),
+    deal(
+      {
+        id: "d-luciana-site",
+        clientId: "c-luciana",
+        title: "Site institucional",
+        valueCents: 480000,
+        ownerId: "u-diego",
+        stage: "negociacao",
+        expectedClose: day(20),
+        nextAction: "Enviar exemplos de sites",
+        nextActionDate: day(2),
+      },
+      -12,
+    ),
+    deal(
+      {
+        id: "d-pedro",
+        clientId: "c-pedro",
+        title: "Logo e fachada da oficina",
+        valueCents: 120000,
+        ownerId: "u-bruno",
+        stage: "qualificacao",
+        expectedClose: day(25),
+        nextAction: "Enviar referências de logo",
+        nextActionDate: day(0),
+      },
+      -3,
+    ),
+    deal(
+      {
+        id: "d-sofia",
+        clientId: "c-sofia",
+        title: "Redes sociais — 3 meses",
+        valueCents: 360000,
+        ownerId: "u-bruno",
+        stage: "ganha",
+        expectedClose: day(-1),
+      },
+      -1,
+    ),
+    deal(
+      {
+        id: "d-rafael",
+        clientId: "c-rafael",
+        title: "Campanha de inauguração",
+        valueCents: 200000,
+        ownerId: "u-ana",
+        stage: "novo_contato",
+        expectedClose: day(30),
+      },
+      -2,
+    ),
+    deal(
+      {
+        id: "d-luciana-cartoes",
+        clientId: "c-luciana",
+        title: "Cartões de visita",
+        valueCents: 30000,
+        ownerId: "u-diego",
+        stage: "perdida",
+        lostReason: "Escolheu outro fornecedor pelo preço",
+      },
+      -25,
+    ),
+    deal(
+      {
+        id: "d-joao-fotos",
+        clientId: "c-joao",
+        title: "Fotos de produtos",
+        valueCents: 80000,
+        ownerId: "u-bruno",
+        stage: "ganha",
+        expectedClose: day(-28),
+      },
+      -28,
+    ),
+  ];
+
+  const proposals: Proposal[] = [
+    {
+      id: "p-1",
+      number: 1,
+      clientId: "c-marina",
+      dealId: "d-marina",
+      status: "aceita",
+      items: [
+        { description: "Criação de logotipo", quantity: 1, unitCents: 90000 },
+        { description: "Manual de marca simplificado", quantity: 1, unitCents: 60000 },
+      ],
+      discountCents: 0,
+      validUntil: day(-30),
+      terms: "Pagamento em 3 parcelas mensais. Inclui 2 rodadas de ajustes.",
+      sentAt: at(-38),
+      acceptedAt: at(-35),
+      createdAt: at(-40),
+      updatedAt: at(-35),
+    },
+    {
+      id: "p-2",
+      number: 2,
+      clientId: "c-joao",
+      dealId: "d-joao-cardapio",
+      status: "enviada",
+      items: [
+        { description: "Design do cardápio digital", quantity: 1, unitCents: 180000 },
+        { description: "Fotos dos pratos (por prato)", quantity: 8, unitCents: 10000 },
+      ],
+      discountCents: 20000,
+      validUntil: day(11),
+      terms: "50% na aprovação e 50% na entrega. Prazo de 15 dias úteis.",
+      sentAt: at(-4),
+      acceptedAt: null,
+      createdAt: at(-5),
+      updatedAt: at(-4),
+    },
+  ];
+
+  const sales: Sale[] = [
+    {
+      id: "s-marina",
+      dealId: "d-marina",
+      clientId: "c-marina",
+      proposalId: "p-1",
+      totalCents: 150000,
+      paymentMode: "parcelado",
+      plan: [
+        { number: 1, amountCents: 50000, dueDate: day(-4) },
+        { number: 2, amountCents: 50000, dueDate: day(26) },
+        { number: 3, amountCents: 50000, dueDate: day(56) },
+      ],
+      status: "confirmada",
+      closedBy: "u-bruno",
+      closedAt: at(-35),
+      reviewedBy: "u-carla",
+      reviewedAt: at(-34),
+    },
+    {
+      id: "s-sofia",
+      dealId: "d-sofia",
+      clientId: "c-sofia",
+      proposalId: null,
+      totalCents: 360000,
+      paymentMode: "parcelado",
+      plan: [
+        { number: 1, amountCents: 180000, dueDate: day(5) },
+        { number: 2, amountCents: 180000, dueDate: day(35) },
+      ],
+      status: "aguardando_conferencia",
+      closedBy: "u-bruno",
+      closedAt: at(-1),
+      reviewedBy: null,
+      reviewedAt: null,
+    },
+    {
+      id: "s-joao-fotos",
+      dealId: "d-joao-fotos",
+      clientId: "c-joao",
+      proposalId: null,
+      totalCents: 80000,
+      paymentMode: "avista",
+      plan: [{ number: 1, amountCents: 80000, dueDate: day(-21) }],
+      status: "confirmada",
+      closedBy: "u-bruno",
+      closedAt: at(-28),
+      reviewedBy: "u-carla",
+      reviewedAt: at(-27),
+    },
+  ];
+
+  const acc = (
+    p: Partial<Account> & Pick<Account, "id" | "kind" | "description" | "amountCents" | "dueDate">,
+  ): Account => ({
+    clientId: null,
+    supplier: null,
+    origin: "venda",
+    saleId: null,
+    installmentNumber: 1,
+    installmentCount: 1,
+    category: null,
+    canceledAt: null,
+    canceledBy: null,
+    cancelReason: null,
+    createdAt: at(-34),
+    ...p,
+  });
+  const accounts: Account[] = [
+    ...sales[0].plan.map((pl) =>
+      acc({
+        id: `a-marina-${pl.number}`,
+        kind: "receber",
+        clientId: "c-marina",
+        saleId: "s-marina",
+        description: "Identidade visual do Café Marina — Marina Costa",
+        installmentNumber: pl.number,
+        installmentCount: 3,
+        amountCents: pl.amountCents,
+        dueDate: pl.dueDate,
+      }),
+    ),
+    acc({
+      id: "a-joao-fotos",
+      kind: "receber",
+      clientId: "c-joao",
+      saleId: "s-joao-fotos",
+      description: "Fotos de produtos — João Pereira",
+      amountCents: 80000,
+      dueDate: day(-21),
+      createdAt: at(-27),
+    }),
+    acc({
+      id: "a-aluguel",
+      kind: "pagar",
+      origin: "despesa",
+      supplier: "Imobiliária Exemplo",
+      category: "Aluguel",
+      description: "Aluguel da sala",
+      amountCents: 180000,
+      dueDate: day(5),
+      createdAt: at(-10),
+    }),
+    acc({
+      id: "a-software",
+      kind: "pagar",
+      origin: "despesa",
+      supplier: "Ferramenta de design (fictícia)",
+      category: "Software e internet",
+      description: "Assinatura de software",
+      amountCents: 18990,
+      dueDate: day(-5),
+      createdAt: at(-12),
+    }),
+    acc({
+      id: "a-grafica",
+      kind: "pagar",
+      origin: "despesa",
+      supplier: "Gráfica Exemplo",
+      category: "Fornecedores",
+      description: "Impressão de amostras",
+      amountCents: 45000,
+      dueDate: day(-2),
+      createdAt: at(-9),
+    }),
+  ];
+
+  const mv = (
+    id: string,
+    accountId: string,
+    direction: Movement["direction"],
+    amountCents: number,
+    paidOn: string,
+    method: Movement["method"],
+    by: string,
+  ): Movement => ({
+    id,
+    accountId,
+    direction,
+    amountCents,
+    paidOn,
+    method,
+    registeredBy: by,
+    createdAt: new Date(paidOn + "T12:00:00").toISOString(),
+    undoneAt: null,
+    undoneBy: null,
+    undoReason: null,
+  });
+  const movements: Movement[] = [
+    mv("m-joao", "a-joao-fotos", "entrada", 80000, day(-20), "pix", "u-carla"),
+    mv("m-software", "a-software", "saida", 18990, day(-5), "cartao_credito", "u-carla"),
+  ];
+
+  const task = (
+    id: string,
+    title: string,
+    clientId: string | null,
+    dealId: string | null,
+    assigneeId: string,
+    due: number,
+    done = false,
+  ): Task => ({
+    id,
+    title,
+    clientId,
+    dealId,
+    assigneeId,
+    dueDate: day(due),
+    status: done ? "concluida" : "aberta",
+    completedAt: done ? at(due) : null,
+    createdAt: at(due - 3),
+  });
+  const tasks: Task[] = [
+    task("t-1", "Retornar para João Pereira sobre a proposta nº 2", "c-joao", "d-joao-cardapio", "u-bruno", -1),
+    task("t-2", "Enviar referências de logo para Pedro", "c-pedro", "d-pedro", "u-bruno", 0),
+    task("t-3", "Conferir a venda da Sofia Martins", "c-sofia", "d-sofia", "u-carla", 0),
+    task("t-4", "Enviar exemplos de sites para Luciana", "c-luciana", "d-luciana-site", "u-diego", 2),
+    task("t-5", "Cobrar a 1ª parcela da Marina", "c-marina", "d-marina", "u-carla", -1),
+    task("t-6", "Primeira conversa com Rafael", "c-rafael", "d-rafael", "u-ana", 1),
+    task("t-7", "Entregar fotos de produtos", "c-joao", "d-joao-fotos", "u-bruno", -22, true),
+  ];
+
+  const notes = [
+    {
+      id: "n-1",
+      clientId: "c-marina",
+      dealId: "d-marina",
+      body: "Marina pediu para pagar a 1ª parcela em duas vezes: R$ 200 agora e o restante na semana que vem.",
+      authorId: "u-bruno",
+      createdAt: at(-3),
+    },
+    {
+      id: "n-2",
+      clientId: "c-luciana",
+      dealId: "d-luciana-site",
+      body: "Prefere reuniões por vídeo às terças. Quer ver exemplos de escritórios de advocacia.",
+      authorId: "u-diego",
+      createdAt: at(-12),
+    },
+    {
+      id: "n-3",
+      clientId: "c-joao",
+      dealId: "d-joao-cardapio",
+      body: "Pediu desconto de R$ 200 para fechar ainda este mês.",
+      authorId: "u-bruno",
+      createdAt: at(-4),
+    },
+  ];
+
+  const activities = [
+    {
+      id: "h-1",
+      clientId: "c-marina",
+      dealId: "d-marina",
+      kind: "venda",
+      description: "Venda fechada: R$ 1.500,00 em 3 parcelas.",
+      actorId: "u-bruno",
+      createdAt: at(-35),
+    },
+    {
+      id: "h-2",
+      clientId: "c-marina",
+      dealId: "d-marina",
+      kind: "venda",
+      description: "Financeiro conferiu a venda e criou 3 contas a receber.",
+      actorId: "u-carla",
+      createdAt: at(-34),
+    },
+    {
+      id: "h-3",
+      clientId: "c-joao",
+      dealId: "d-joao-cardapio",
+      kind: "proposta",
+      description: "Envio da proposta nº 2 registrado",
+      actorId: "u-bruno",
+      createdAt: at(-4),
+    },
+    {
+      id: "h-4",
+      clientId: "c-sofia",
+      dealId: "d-sofia",
+      kind: "venda",
+      description: "Venda fechada: R$ 3.600,00 em 2 parcelas. Aguardando conferência do financeiro.",
+      actorId: "u-bruno",
+      createdAt: at(-1),
+    },
+    {
+      id: "h-5",
+      clientId: "c-joao",
+      dealId: "d-joao-fotos",
+      kind: "financeiro",
+      description: "Recebimento de R$ 800,00 registrado (parcela 1 de 1)",
+      actorId: "u-carla",
+      createdAt: at(-20),
+    },
+    {
+      id: "h-6",
+      clientId: "c-luciana",
+      dealId: "d-luciana-cartoes",
+      kind: "etapa",
+      description: "Negociação marcada como perdida. Motivo: Escolheu outro fornecedor pelo preço",
+      actorId: "u-diego",
+      createdAt: at(-25),
+    },
+  ];
+
+  const aurora: CompanyData = {
+    company: { id: PREVIEW_COMPANY_IDS.aurora, name: "Aurora Estúdio" },
+    members: auroraMembers,
+    clients,
+    deals,
+    tasks,
+    notes,
+    proposals,
+    sales,
+    accounts,
+    movements,
+    activities,
+  };
+
+  // ---------- Horizonte Serviços (empresa nova, para testar o primeiro uso) ----------
+  const horizonte: CompanyData = {
+    company: { id: PREVIEW_COMPANY_IDS.horizonte, name: "Horizonte Serviços" },
+    members: [
+      { userId: "u-ana", name: "Ana Souza", email: "ana@horizonte.exemplo", roles: ["admin"] },
+      { userId: "u-eduardo", name: "Eduardo Pires", email: "eduardo@horizonte.exemplo", roles: ["vendedor"] },
+      { userId: "u-fernanda", name: "Fernanda Alves", email: "fernanda@horizonte.exemplo", roles: ["financeiro"] },
+    ],
+    clients: [],
+    deals: [],
+    tasks: [],
+    notes: [],
+    proposals: [],
+    sales: [],
+    accounts: [],
+    movements: [],
+    activities: [],
+  };
+
+  return [aurora, horizonte];
+}

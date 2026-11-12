@@ -1,0 +1,66 @@
+"use client";
+
+import { DialogContext, type DialogProps, type DialogSpec } from "@/components/layout/dialog-context";
+import { ClientDialog } from "@/features/clients/client-dialog";
+import { DealDialog } from "@/features/deals/deal-dialog";
+import { LostDealDialog } from "@/features/deals/lost-deal-dialog";
+import { CancelAccountDialog } from "@/features/finance/cancel-account-dialog";
+import { ExpenseDialog } from "@/features/finance/expense-dialog";
+import { SettleDialog } from "@/features/finance/settle-dialog";
+import { UndoMovementDialog } from "@/features/finance/undo-movement-dialog";
+import { AcceptProposalDialog } from "@/features/proposals/accept-proposal-dialog";
+import { ProposalDialog } from "@/features/proposals/proposal-editor-dialog";
+import { RejectProposalDialog } from "@/features/proposals/reject-proposal-dialog";
+import { SendProposalDialog } from "@/features/proposals/send-proposal-dialog";
+import { CloseSaleDialog } from "@/features/sales/close-sale-dialog";
+import { ReviewSaleDialog } from "@/features/sales/review-sale-dialog";
+import { TaskDialog } from "@/features/tasks/task-dialog";
+import { Fragment, useCallback, useMemo, useState } from "react";
+
+function renderDialog(spec: DialogSpec, props: DialogProps) {
+  switch (spec.kind) {
+    case "client":
+      return <ClientDialog {...props} clientId={spec.clientId} />;
+    case "deal":
+      return <DealDialog {...props} dealId={spec.dealId} clientId={spec.clientId} />;
+    case "task":
+      return <TaskDialog {...props} taskId={spec.taskId} clientId={spec.clientId} dealId={spec.dealId} />;
+    case "lostDeal":
+      return <LostDealDialog {...props} dealId={spec.dealId} />;
+    case "expense":
+      return <ExpenseDialog {...props} />;
+    case "proposal":
+      return <ProposalDialog {...props} proposalId={spec.proposalId} dealId={spec.dealId} clientId={spec.clientId} />;
+    case "sendProposal":
+      return <SendProposalDialog {...props} proposalId={spec.proposalId} />;
+    case "acceptProposal":
+      return <AcceptProposalDialog {...props} proposalId={spec.proposalId} />;
+    case "rejectProposal":
+      return <RejectProposalDialog {...props} proposalId={spec.proposalId} />;
+    case "closeSale":
+      return <CloseSaleDialog {...props} dealId={spec.dealId} proposalId={spec.proposalId} />;
+    case "reviewSale":
+      return <ReviewSaleDialog {...props} saleId={spec.saleId} />;
+    case "settle":
+      return <SettleDialog {...props} accountId={spec.accountId} accountKind={spec.accountKind} />;
+    case "undoMovement":
+      return <UndoMovementDialog {...props} movementId={spec.movementId} />;
+    case "cancelAccount":
+      return <CancelAccountDialog {...props} accountId={spec.accountId} />;
+  }
+}
+
+/** Mantém uma janela aberta por vez. A chave muda a cada abertura: formulário limpo, sem erros antigos. */
+export function DialogHost({ children }: { children: React.ReactNode }) {
+  const [current, setCurrent] = useState<{ spec: DialogSpec; key: number } | null>(null);
+  const open = useCallback((spec: DialogSpec) => setCurrent((c) => ({ spec, key: (c?.key ?? 0) + 1 })), []);
+  const close = useCallback(() => setCurrent(null), []);
+  const api = useMemo(() => ({ open, close }), [open, close]);
+
+  return (
+    <DialogContext value={api}>
+      {children}
+      {current && <Fragment key={current.key}>{renderDialog(current.spec, { onClose: close, open })}</Fragment>}
+    </DialogContext>
+  );
+}
