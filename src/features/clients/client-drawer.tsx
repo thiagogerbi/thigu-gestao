@@ -10,6 +10,7 @@ import { ClientHistory, NOTE_FIELD_ID } from "@/features/clients/client-history"
 import { ClientAppointments } from "@/features/clients/client-appointments";
 import { ClientClinicalNotes } from "@/features/clients/client-clinical-notes";
 import { ClientItems } from "@/features/clients/client-items";
+import { ClientRecurring } from "@/features/clients/client-recurring";
 import { ClientNextAction } from "@/features/clients/client-next-action";
 import { ClientProposalsList } from "@/features/clients/client-proposals-list";
 import { ClientSection } from "@/features/clients/client-section";
@@ -252,6 +253,7 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
 
       {itemKind && <ClientItems clientId={clientId} kind={itemKind} editable={editable} />}
       {ag.enabled && <ClientAppointments clientId={clientId} />}
+      <ClientRecurring clientId={clientId} />
       {showNotes && <ClientClinicalNotes clientId={clientId} />}
       <ClientNextAction nextAction={nextAction} tasks={tasks} hasOpenDeals={openDeals.length > 0} />
       <ClientContact client={client} />

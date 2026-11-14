@@ -122,6 +122,8 @@ export const actionSchema = z.discriminatedUnion("type", [
     times: z.number().int().min(1).max(12),
     /** A pessoa viu o aviso de horário ocupado e quer marcar mesmo assim (encaixe). */
     allowOverlap: z.boolean(),
+    /** Pacote do cliente a usar (não gera cobrança; desconta uma sessão ao ser atendido). */
+    packageId: id.nullable().optional(),
   }),
   z.object({
     type: z.literal("appointment.setStatus"),
@@ -131,6 +133,33 @@ export const actionSchema = z.discriminatedUnion("type", [
     charge: z.boolean(),
   }),
   z.object({ type: z.literal("appointment.markReminded"), id }),
+  z.object({
+    type: z.literal("package.sell"),
+    clientId: id,
+    serviceId: id.nullable(),
+    itemId: id.nullable(),
+    name: text(80).min(1, "Dê um nome para o pacote."),
+    sessions: z.number().int().min(1, "Use pelo menos 1 sessão.").max(200, "Use até 200 sessões."),
+    priceCents: cents,
+    validUntil: date.nullable(),
+    /** Parcelas (só quando há valor). */
+    plan: z
+      .array(z.object({ number: z.number().int().min(1).max(36), amountCents: positiveCents, dueDate: date }))
+      .max(36),
+    requestId: z.string().uuid(),
+  }),
+  z.object({ type: z.literal("package.close"), id }),
+  z.object({
+    type: z.literal("subscription.save"),
+    id: id.optional(),
+    clientId: id,
+    name: text(80).min(1, "Dê um nome para a mensalidade."),
+    amountCents: positiveCents,
+    dayOfMonth: z.number().int().min(1, "Escolha o dia.").max(28, "Use um dia de 1 a 28."),
+    startsOn: date,
+    endsOn: date.nullable(),
+  }),
+  z.object({ type: z.literal("subscription.cancel"), id }),
   z.object({
     type: z.literal("clinicalNote.add"),
     clientId: id,

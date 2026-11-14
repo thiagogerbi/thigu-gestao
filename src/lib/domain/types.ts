@@ -166,6 +166,10 @@ export interface Appointment {
   accountId: string | null;
   /** Quando alguém tocou em "lembrar pelo WhatsApp". */
   remindedAt: ISODateTime | null;
+  /** Pacote do cliente usado neste horário (não gera cobrança; desconta uma sessão). */
+  packageId: string | null;
+  /** O atendimento (ou a falta cobrada) usou uma sessão do pacote. */
+  consumesPackage: boolean;
   createdBy: string;
   createdAt: ISODateTime;
 }
@@ -270,7 +274,7 @@ export interface Sale {
 }
 
 export type AccountKind = "receber" | "pagar";
-export type AccountOrigin = "venda" | "despesa" | "avulsa" | "atendimento";
+export type AccountOrigin = "venda" | "despesa" | "avulsa" | "atendimento" | "pacote" | "mensalidade";
 
 export interface Account {
   id: string;
@@ -288,6 +292,39 @@ export interface Account {
   canceledAt: ISODateTime | null;
   canceledBy: string | null;
   cancelReason: string | null;
+  createdAt: ISODateTime;
+  /** Parcela da venda de um pacote. */
+  packageId?: string | null;
+  /** Cobrança de uma mensalidade, com o mês a que se refere (primeiro dia do mês). */
+  subscriptionId?: string | null;
+  period?: ISODate | null;
+}
+
+/** Pacote de sessões vendido a um cliente. Sessões usadas = atendimentos que consumiram o pacote. */
+export interface Package {
+  id: string;
+  clientId: string;
+  serviceId: string | null;
+  itemId: string | null;
+  name: string;
+  sessionsTotal: number;
+  priceCents: number;
+  validUntil: ISODate | null;
+  closedAt: ISODateTime | null;
+  createdAt: ISODateTime;
+}
+
+/** Mensalidade: gera uma conta a receber por mês, no dia escolhido. */
+export interface Subscription {
+  id: string;
+  clientId: string;
+  name: string;
+  amountCents: number;
+  /** De 1 a 28, para existir em todos os meses. */
+  dayOfMonth: number;
+  startsOn: ISODate;
+  endsOn: ISODate | null;
+  canceledAt: ISODateTime | null;
   createdAt: ISODateTime;
 }
 
@@ -328,6 +365,8 @@ export interface CompanyData {
   services: Service[];
   appointments: Appointment[];
   clinicalNotes: ClinicalNote[];
+  packages: Package[];
+  subscriptions: Subscription[];
   deals: Deal[];
   tasks: Task[];
   notes: Note[];

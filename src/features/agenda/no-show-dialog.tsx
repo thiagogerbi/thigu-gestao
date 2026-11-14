@@ -42,10 +42,16 @@ export function NoShowDialog({ onClose, appointmentId }: DialogProps & { appoint
           <Button variant="secondary" onClick={onClose}>
             Voltar
           </Button>
-          {ap.priceCents > 0 && (
+          {ap.packageId ? (
             <Button variant="secondary" loading={pending} onClick={() => save(true)}>
-              Registrar e cobrar {formatBRL(ap.priceCents)}
+              Registrar e descontar do pacote
             </Button>
+          ) : (
+            ap.priceCents > 0 && (
+              <Button variant="secondary" loading={pending} onClick={() => save(true)}>
+                Registrar e cobrar {formatBRL(ap.priceCents)}
+              </Button>
+            )
           )}
           <Button loading={pending} onClick={() => save(false)}>
             Registrar sem cobrar
@@ -55,9 +61,11 @@ export function NoShowDialog({ onClose, appointmentId }: DialogProps & { appoint
     >
       {error && <InlineAlert>{error}</InlineAlert>}
       <p>
-        {ap.priceCents > 0
-          ? "Se a falta for cobrada, o valor vai para o financeiro como conta a receber."
-          : "Este horário não tem valor, então a falta não gera cobrança."}
+        {ap.packageId
+          ? "Este horário usa um pacote. Se a falta for cobrada, uma sessão do pacote é descontada."
+          : ap.priceCents > 0
+            ? "Se a falta for cobrada, o valor vai para o financeiro como conta a receber."
+            : "Este horário não tem valor, então a falta não gera cobrança."}
       </p>
     </Modal>
   );

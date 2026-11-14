@@ -24,7 +24,8 @@ export type Capability =
   | "agenda.todas" // ver e marcar na agenda de todos
   | "agenda.propria" // ver e marcar só nas agendas ligadas à própria pessoa
   | "agenda.configurar" // cadastrar serviços e quem atende
-  | "prontuario.escrever"; // escrever e ler as próprias anotações de atendimento
+  | "prontuario.escrever" // escrever e ler as próprias anotações de atendimento
+  | "recorrentes.vender"; // vender pacotes e criar ou cancelar mensalidades
 
 const ALL_CLIENTS: Capability[] = ["clientes.ver_todos", "clientes.editar_todos", "clientes.editar_proprios"];
 
@@ -42,6 +43,7 @@ const MATRIX: Record<Role, Capability[]> = {
     "recebiveis.ver_proprios",
     "agenda.todas",
     "agenda.configurar",
+    "recorrentes.vender",
   ],
   gestor: [
     ...ALL_CLIENTS,
@@ -52,11 +54,19 @@ const MATRIX: Record<Role, Capability[]> = {
     "recebiveis.ver_proprios",
     "agenda.todas",
     "agenda.configurar",
+    "recorrentes.vender",
   ],
   vendedor: ["clientes.editar_proprios", "crm.editar_proprios", "venda.fechar", "recebiveis.ver_proprios"],
-  financeiro: ["clientes.ver_todos", "crm.ver_todos", "venda.conferir", "financeiro.ver", "financeiro.registrar"],
+  financeiro: [
+    "clientes.ver_todos",
+    "crm.ver_todos",
+    "venda.conferir",
+    "financeiro.ver",
+    "financeiro.registrar",
+    "recorrentes.vender",
+  ],
   // Papéis dos ramos com atendimento. O caixa do dia entra com o próximo módulo.
-  recepcao: [...ALL_CLIENTS, "agenda.todas"],
+  recepcao: [...ALL_CLIENTS, "agenda.todas", "recorrentes.vender"],
   // o administrador não lê o prontuário dos outros: quem atende e também é dono acumula "profissional"
   profissional: ["clientes.editar_proprios", "agenda.propria", "prontuario.escrever"],
   caixa: ALL_CLIENTS,

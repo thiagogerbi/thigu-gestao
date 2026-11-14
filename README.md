@@ -152,7 +152,7 @@ Ao criar a empresa, a pessoa escolhe o ramo (dá para trocar depois em **Minha e
 - **nomes das telas** — "paciente" na clínica, "tutor" no pet shop, "aluno" nas turmas;
 - **papéis oferecidos à equipe e seus nomes** — "Profissional de saúde", "Mecânico", "Atendente";
 - **campos extras da ficha** — nascimento e convênio na clínica, endereço no pet shop;
-- **módulos ligados** — prontos: pets do cliente, agenda, lista de serviços, ficha de atendimento e lembretes; ordem de serviço, pacotes, caixa e os demais estão no catálogo, mas ainda não foram construídos.
+- **módulos ligados** — prontos: pets do cliente, agenda, lista de serviços, ficha de atendimento, lembretes, pacotes e mensalidades; ordem de serviço, caixa, comissões e os demais estão no catálogo, mas ainda não foram construídos.
 
 ### Agenda (clínica, salão, pet shop e aulas)
 
@@ -163,6 +163,15 @@ Ao criar a empresa, a pessoa escolhe o ramo (dá para trocar depois em **Minha e
 - **Ficha de atendimento (prontuário):** só quem escreveu lê, nem o administrador. Nada é editado nem apagado: corrigir cria outra anotação ligada à original. Antes de usar com pacientes reais, validar com um advogado as regras da LGPD e dos conselhos profissionais.
 - **Visão geral:** nos ramos com agenda, mostra os horários de hoje, os lembretes de amanhã e as faltas da semana.
 - A carga de dados traz os atendimentos dos últimos 120 dias em diante.
+
+### Pacotes e mensalidades
+
+- **Pacote de sessões:** vendido à vista ou parcelado (função `sell_package`); as parcelas viram contas a receber (`origin = 'pacote'`). Repetir o pedido não vende duas vezes (`request_id`).
+- Ao marcar um horário, o pacote do cliente aparece para escolher. Atendido com pacote **não gera cobrança** e usa uma sessão; a falta cobrada também usa. O banco não deixa passar do total de sessões, e desfazer devolve a sessão.
+- Pacote vencido ou encerrado não entra em horário novo. Encerrar exige não ter horário marcado com ele.
+- **Mensalidade:** valor, dia do vencimento (1 a 28), início e fim opcional. A cobrança de cada mês é criada por `generate_subscription_charges`, chamada ao carregar os dados da empresa (não depende de tarefa agendada no servidor); um índice único garante uma cobrança por mês. Cancelar para as cobranças novas; as que já existem continuam no financeiro.
+- Quem vende pacotes e cria mensalidades: administrador, gestor, recepção e financeiro. O profissional vê os pacotes dos próprios pacientes. As cobranças só aparecem para quem vê o financeiro, que também tem o botão "Cobrar pelo WhatsApp" nas mensalidades atrasadas.
+- No celular, quando há mais de 5 itens no menu, os últimos vão para "Mais".
 
 O catálogo fica em `src/lib/domain/segments.ts` e tem um espelho no banco (`_segment_modules`, `_module_min_plan`); um teste compara os dois. Toda ação passa por quatro perguntas:
 
@@ -179,7 +188,7 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 
 ## O que funciona, o que é simulado e o que está pendente
 
-### Testado automaticamente (`npm test` — 102 testes)
+### Testado automaticamente (`npm test` — 119 testes)
 
 - Regras de dinheiro, datas, divisão de parcelas, saldo e situação das contas, totais de proposta e matriz de permissões.
 - **Caso de aceitação completo** no motor da prévia **e no banco** (migrações reais rodando no PGlite):
@@ -187,6 +196,7 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 - RLS: vendedor não vê contas a pagar nem lança despesas; chave composta impede misturar empresas; histórico não pode ser apagado; o dono faz o fluxo sozinho; numeração e aceite de propostas.
 - Chamadas diretas ao banco (sem passar pela interface): o e-mail do perfil não pode ser trocado para receber o convite de outra pessoa; venda não fecha com parcela sem número, valor ou vencimento; vendedor não aponta a própria negociação para um cliente que não vê; proposta e itens só são gravados pelas funções.
 - Ramos e papéis novos, no motor da prévia **e no banco**: o catálogo do banco é igual ao do aplicativo; só o administrador troca o ramo e ninguém troca o plano; recepção e caixa cuidam dos clientes de todos e o profissional só dos próprios; nenhum dos três vê negociações, vendas ou financeiro; pets só existem com o módulo ligado, são lidos por quem vê o tutor e gravados por quem edita o tutor, nunca entre empresas; trocar de ramo não apaga os campos do ramo anterior.
+- Pacotes e mensalidades, no motor da prévia **e no banco**: venda em parcelas sem duplicar; só quem pode vende; atendido com pacote usa sessão sem gerar conta e não passa do total; desfazer devolve a sessão; pacote de outro cliente, vencido ou encerrado não entra no horário; mensalidade gera uma cobrança por mês até o mês atual, sem duplicar, e para ao ser cancelada; empresas sem o módulo não têm nada disso.
 - Agenda, no motor da prévia **e no banco**: cada profissional vê e marca só na própria agenda; quem atende um paciente do colega passa a vê-lo, mas não edita a ficha; a situação não muda direto na tabela; atendido gera a conta a receber, desfazer cancela, e com pagamento registrado não desfaz; falta cobrada vira conta; horário encerrado não se remarca; a ficha de atendimento só é lida por quem escreveu e não pode ser alterada nem apagada; empresas sem o módulo não têm agenda.
 - Convites: o vínculo só existe depois do aceite; o convite espera quem ainda não tem conta; e-mail não confirmado não vê nem aceita; recusar e cancelar não criam vínculo; só o administrador convida e cancela; quem teve o acesso removido só volta aceitando um novo convite.
 
@@ -225,6 +235,8 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 ### Pendente / próximos passos
 
 - Ramos: as telas de negociações, propostas, financeiro, tarefas e o guia da prévia ainda dizem "cliente" em todos os ramos; a troca de nome vale para o menu, a lista, a ficha, o cadastro e a visão geral.
+- Fase 2B: caixa do dia, comissões e turmas. Fase 2C: horário de trabalho, agendamento online e lembrete automático pelo WhatsApp oficial.
+- Mensalidades: cobrança automática no cartão (hoje a cobrança é criada, mas o pagamento é registrado à mão).
 - Agenda: horário de trabalho e folgas de cada agenda; remarcar ou cancelar toda a série de uma vez; ver a semana em grade de horários; registro de quem abriu cada ficha de atendimento (hoje só o autor lê, então não há outros acessos para registrar).
 
 - Testes de ponta a ponta (Playwright) contra um Supabase local (`supabase start`, que exige Docker).

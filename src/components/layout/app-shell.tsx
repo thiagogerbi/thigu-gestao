@@ -9,6 +9,8 @@ import {
   IconCheck,
   IconColumns,
   IconHome,
+  IconMenu,
+  IconRepeat,
   IconUndo,
   IconUsers,
   IconWallet,
@@ -23,6 +25,7 @@ import { can, usesAgenda, usesClients, usesCrm } from "@/lib/domain/permissions"
 import { moduleAvailable } from "@/lib/domain/segments";
 import type { Role } from "@/lib/domain/types";
 import { useBackend } from "@/state/backend-context";
+import { useRecurring } from "@/state/use-recurring";
 import { useTerms } from "@/state/use-terms";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -31,6 +34,7 @@ import { Suspense, useState, useSyncExternalStore } from "react";
 function useNavItems() {
   const { me, basePath, data } = useBackend();
   const t = useTerms();
+  const rec = useRecurring();
   const items = [
     { href: basePath, label: "Visão geral", icon: IconHome, show: true },
     {
@@ -40,6 +44,12 @@ function useNavItems() {
       show: moduleAvailable(data.company, "agenda") && usesAgenda(me.roles),
     },
     { href: `${basePath}/clientes`, label: t.Clientes, icon: IconUsers, show: usesClients(me.roles) },
+    {
+      href: `${basePath}/recorrentes`,
+      label: rec.label,
+      icon: IconRepeat,
+      show: rec.enabled && (rec.canSell || rec.seesMoney),
+    },
     { href: `${basePath}/negociacoes`, label: "Negociações", icon: IconColumns, show: usesCrm(me.roles) },
     { href: `${basePath}/tarefas`, label: "Tarefas", icon: IconCheck, show: true },
     {
@@ -181,16 +191,52 @@ function MobileTop() {
   );
 }
 
+/** No celular cabem 5 botões; o que passar disso vai para "Mais". */
+const MOBILE_SLOTS = 5;
+
 function MobileNav() {
   const { basePath } = useBackend();
   const pathname = usePathname();
-  const items = useNavItems();
+  const all = useNavItems();
+  const [moreOpen, setMoreOpen] = useState(false);
+  const overflow = all.length > MOBILE_SLOTS;
+  const items = overflow ? all.slice(0, MOBILE_SLOTS - 1) : all;
+  const more = overflow ? all.slice(MOBILE_SLOTS - 1) : [];
+  const moreActive = more.some((it) => isActive(pathname, it.href, basePath));
   return (
     <nav
       aria-label="Menu principal"
       className="fixed inset-x-0 bottom-0 z-30 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-bar backdrop-blur-md lg:hidden print:hidden"
     >
-      <ul className="grid" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+      {moreOpen && (
+        <ul
+          id="menu-mais"
+          className="absolute inset-x-2 bottom-full mb-2 grid gap-1 rounded-2xl border border-line bg-white p-2 shadow-raised"
+        >
+          {more.map((it) => {
+            const active = isActive(pathname, it.href, basePath);
+            return (
+              <li key={it.href}>
+                <Link
+                  href={it.href}
+                  onClick={() => setMoreOpen(false)}
+                  aria-current={active ? "page" : undefined}
+                  className={cx(
+                    "flex min-h-12 items-center gap-3 rounded-lg px-3",
+                    active ? "bg-primary-50 font-semibold text-primary-700" : "text-ink hover:bg-canvas",
+                  )}
+                >
+                  <it.icon className="h-5 w-5" /> {it.label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <ul
+        className="grid"
+        style={{ gridTemplateColumns: `repeat(${items.length + (overflow ? 1 : 0)}, minmax(0, 1fr))` }}
+      >
         {items.map((it) => {
           const active = isActive(pathname, it.href, basePath);
           return (
@@ -217,6 +263,30 @@ function MobileNav() {
             </li>
           );
         })}
+        {overflow && (
+          <li>
+            <button
+              type="button"
+              onClick={() => setMoreOpen((o) => !o)}
+              aria-expanded={moreOpen}
+              aria-controls="menu-mais"
+              className={cx(
+                "flex min-h-16 w-full flex-col items-center justify-center gap-0.5 px-0.5 text-[11px] leading-4",
+                moreActive || moreOpen ? "font-semibold text-primary-700" : "font-medium text-muted",
+              )}
+            >
+              <span
+                className={cx(
+                  "flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-150",
+                  (moreActive || moreOpen) && "bg-primary-50",
+                )}
+              >
+                <IconMenu className="h-[22px] w-[22px]" />
+              </span>
+              <span>Mais</span>
+            </button>
+          </li>
+        )}
       </ul>
     </nav>
   );

@@ -12,11 +12,13 @@ import type {
   Movement,
   MyInvite,
   Note,
+  Package,
   Proposal,
   Resource,
   Role,
   Sale,
   Service,
+  Subscription,
   Task,
 } from "@/lib/domain/types";
 import type { ServerSupabase } from "@/lib/supabase/server";
@@ -85,6 +87,9 @@ export async function loadCompanyInvites(sb: ServerSupabase, companyId: string):
 /** Carrega o que o usuário pode ver da empresa. O filtro de permissão é feito pelo banco (RLS). */
 export async function loadCompanyData(sb: ServerSupabase, companyId: string): Promise<CompanyData> {
   const q = (t: string, cols = "*") => sb.from(t).select(cols).eq("company_id", companyId);
+  // cobranças das mensalidades que venceram desde a última visita (não depende de tarefa agendada)
+  const generated = await sb.rpc("generate_subscription_charges", { cid: companyId });
+  if (generated.error) console.error("[thigu] não foi possível gerar as cobranças das mensalidades", generated.error);
   // atendimentos dos últimos 120 dias em diante (o histórico mais antigo fica no banco)
   const since = new Date(Date.now() - 120 * 86_400_000).toISOString();
   const [
@@ -96,6 +101,8 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
     services,
     appointments,
     clinicalNotes,
+    packages,
+    subscriptions,
     deals,
     tasks,
     notes,
@@ -121,6 +128,8 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
     q("services").order("name"),
     q("appointments").gte("starts_at", since).order("starts_at"),
     q("clinical_notes").order("created_at", { ascending: false }).limit(1000),
+    q("packages").order("created_at", { ascending: false }),
+    q("subscriptions").order("created_at", { ascending: false }),
     q("deals"),
     q("tasks"),
     q("notes").order("created_at", { ascending: false }).limit(1000),
@@ -139,6 +148,8 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
     services,
     appointments,
     clinicalNotes,
+    packages,
+    subscriptions,
     deals,
     tasks,
     notes,
@@ -222,6 +233,8 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
       seriesId: a.series_id,
       accountId: a.account_id,
       remindedAt: a.reminded_at,
+      packageId: a.package_id ?? null,
+      consumesPackage: Boolean(a.consumes_package),
       createdBy: a.created_by,
       createdAt: a.created_at,
     })),
@@ -233,6 +246,29 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
       body: n.body,
       correctsId: n.corrects_id,
       createdAt: n.created_at,
+    })),
+    packages: rows(packages).map((p): Package => ({
+      id: p.id,
+      clientId: p.client_id,
+      serviceId: p.service_id,
+      itemId: p.item_id,
+      name: p.name,
+      sessionsTotal: p.sessions_total,
+      priceCents: Number(p.price_cents),
+      validUntil: p.valid_until,
+      closedAt: p.closed_at,
+      createdAt: p.created_at,
+    })),
+    subscriptions: rows(subscriptions).map((s): Subscription => ({
+      id: s.id,
+      clientId: s.client_id,
+      name: s.name,
+      amountCents: Number(s.amount_cents),
+      dayOfMonth: s.day_of_month,
+      startsOn: s.starts_on,
+      endsOn: s.ends_on,
+      canceledAt: s.canceled_at,
+      createdAt: s.created_at,
     })),
     deals: rows(deals).map((d): Deal => ({
       id: d.id,
@@ -320,6 +356,9 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
       canceledBy: a.canceled_by,
       cancelReason: a.cancel_reason,
       createdAt: a.created_at,
+      packageId: a.package_id ?? null,
+      subscriptionId: a.subscription_id ?? null,
+      period: a.period ?? null,
     })),
     movements: rows(movements).map((m): Movement => ({
       id: m.id,

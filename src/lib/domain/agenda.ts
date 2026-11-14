@@ -154,7 +154,11 @@ export function overlapMessage(count: number, resourceName: string): string {
 }
 
 /** Mensagem depois de mudar a situação (igual na prévia e na versão real). */
-export function statusMessage(status: AppointmentStatus, accountCreated: boolean): string {
+export function statusMessage(status: AppointmentStatus, accountCreated: boolean, packageSession = false): string {
+  if (packageSession)
+    return status === "faltou"
+      ? "Falta registrada. Uma sessão do pacote foi usada."
+      : "Atendimento registrado. Uma sessão do pacote foi usada.";
   const toFinance = accountCreated ? " A conta a receber foi para o financeiro." : "";
   switch (status) {
     case "confirmado":

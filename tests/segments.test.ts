@@ -92,8 +92,9 @@ describe("catálogo de ramos", () => {
 
   it("módulo ainda não construído não aparece, mesmo ligado", () => {
     const clinica = { segment: "clinica", plan: "empresa", extraModules: [] } as const;
-    expect(moduleEnabled(clinica, "pacotes")).toBe(true);
-    expect(moduleAvailable(clinica, "pacotes")).toBe(false);
+    const beleza = { segment: "beleza", plan: "empresa", extraModules: [] } as const;
+    expect(moduleEnabled(beleza, "caixa")).toBe(true);
+    expect(moduleAvailable(beleza, "caixa")).toBe(false);
     expect(moduleAvailable(clinica, "agenda")).toBe(true);
     expect(itemKindFor({ segment: "pet", plan: "empresa", extraModules: [] })).toBe("pet");
     expect(itemKindFor({ segment: "clinica", plan: "empresa", extraModules: [] })).toBeNull();

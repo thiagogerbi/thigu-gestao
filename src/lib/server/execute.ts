@@ -29,7 +29,9 @@ import {
   termsFor,
   type CompanyFlags,
 } from "@/lib/domain/segments";
-import { STAGE_LABEL, type AppointmentStatus, type Role } from "@/lib/domain/types";
+import { toISODate } from "@/lib/domain/dates";
+import { packageError, packageView, startsOnError } from "@/lib/domain/recurring";
+import { STAGE_LABEL, type Appointment, type AppointmentStatus, type Role } from "@/lib/domain/types";
 import type { ServerSupabase } from "@/lib/supabase/server";
 import "server-only";
 
@@ -269,6 +271,51 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
         return fail("Você só pode marcar na sua própria agenda.");
       const slotErr = slotError(a.startsAt, a.endsAt);
       if (slotErr) return fail(slotErr, { endsAt: slotErr });
+      const packageId = a.packageId ?? null;
+      if (packageId) {
+        // sessões livres do pacote: total − usadas − já marcadas (o banco confere de novo ao atender)
+        const [{ data: pkg }, { data: uses }] = await Promise.all([
+          sb
+            .from("packages")
+            .select(
+              "id, client_id, service_id, item_id, name, sessions_total, price_cents, valid_until, closed_at, created_at",
+            )
+            .eq("id", packageId)
+            .eq("company_id", companyId)
+            .maybeSingle(),
+          sb.from("appointments").select("id, status, consumes_package, package_id").eq("package_id", packageId),
+        ]);
+        const view =
+          pkg && pkg.client_id === a.clientId
+            ? packageView(
+                {
+                  id: pkg.id,
+                  clientId: pkg.client_id,
+                  serviceId: pkg.service_id,
+                  itemId: pkg.item_id,
+                  name: pkg.name,
+                  sessionsTotal: pkg.sessions_total,
+                  priceCents: Number(pkg.price_cents),
+                  validUntil: pkg.valid_until,
+                  closedAt: pkg.closed_at,
+                  createdAt: pkg.created_at,
+                },
+                (uses ?? []).map(
+                  (u) =>
+                    ({
+                      id: u.id,
+                      status: u.status,
+                      consumesPackage: u.consumes_package,
+                      packageId: u.package_id,
+                    }) as Appointment,
+                ),
+                toISODate(new Date()),
+                a.id,
+              )
+            : undefined;
+        const pkgErr = packageError(view, a.id ? 1 : seriesStarts(a.startsAt, a.repeat, a.times).length);
+        if (pkgErr) return fail(pkgErr, { packageId: pkgErr });
+      }
       const values = {
         client_id: a.clientId,
         resource_id: a.resourceId,
@@ -278,6 +325,7 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
         ends_at: a.endsAt,
         price_cents: a.priceCents,
         notes: a.notes,
+        package_id: packageId,
       };
       const minutes = durationMinutes(a);
       const slots = a.id
@@ -359,8 +407,96 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
         p_charge: a.charge,
       });
       if (error) return dbFail(error);
-      const r = data as { already: boolean; account_id?: string | null };
-      return { ok: true, message: statusMessage(a.status, Boolean(r?.account_id)), id: a.id };
+      const r = data as { already: boolean; account_id?: string | null; package_session?: boolean };
+      return {
+        ok: true,
+        message: statusMessage(a.status, Boolean(r?.account_id), Boolean(r?.package_session)),
+        id: a.id,
+      };
+    }
+
+    case "package.sell": {
+      if (!need("recorrentes.vender")) return fail("Seu papel nesta empresa não permite vender pacotes.");
+      if (a.priceCents > 0) {
+        const check = checkPlan(a.plan, a.priceCents);
+        if (!check.ok) return fail(check.errors[0] ?? "Revise as parcelas.");
+      }
+      const { data, error } = await sb.rpc("sell_package", {
+        p_client: a.clientId,
+        p_service: a.serviceId,
+        p_item: a.itemId,
+        p_name: a.name,
+        p_sessions: a.sessions,
+        p_price: a.priceCents,
+        p_valid_until: a.validUntil,
+        p_plan: a.priceCents > 0 ? plan(a.plan) : [],
+        p_request: a.requestId,
+      });
+      if (error) return dbFail(error);
+      const r = data as { package_id: string; duplicate: boolean };
+      return {
+        ok: true,
+        message:
+          a.priceCents > 0
+            ? `Pacote vendido. ${a.plan.length === 1 ? "A cobrança foi" : `As ${a.plan.length} parcelas foram`} para o financeiro.`
+            : "Pacote cadastrado.",
+        id: r.package_id,
+      };
+    }
+
+    case "package.close": {
+      if (!need("recorrentes.vender")) return fail("Seu papel nesta empresa não permite encerrar pacotes.");
+      const { error } = await sb.rpc("close_package", { p_package: a.id });
+      if (error) return dbFail(error);
+      return { ok: true, message: "Pacote encerrado.", id: a.id };
+    }
+
+    case "subscription.save": {
+      if (!need("recorrentes.vender")) return fail("Seu papel nesta empresa não permite criar mensalidades.");
+      if (a.endsOn && a.endsOn < a.startsOn)
+        return fail("O fim precisa ser depois do início.", { endsOn: "O fim precisa ser depois do início." });
+      const values = { name: a.name, amount_cents: a.amountCents, day_of_month: a.dayOfMonth, ends_on: a.endsOn };
+      if (a.id) {
+        const { data, error } = await sb
+          .from("subscriptions")
+          .update(values)
+          .eq("id", a.id)
+          .eq("company_id", companyId)
+          .select("id");
+        if (error) return dbFail(error);
+        if (!data?.length) return fail("Mensalidade não encontrada ou já cancelada.");
+        await sb.rpc("generate_subscription_charges", { cid: companyId });
+        return { ok: true, message: "Mensalidade atualizada. Vale para as próximas cobranças.", id: a.id };
+      }
+      const startErr = startsOnError(a.startsOn, toISODate(new Date()));
+      if (startErr) return fail(startErr, { startsOn: startErr });
+      const { data, error } = await sb
+        .from("subscriptions")
+        .insert({ ...values, client_id: a.clientId, starts_on: a.startsOn, company_id: companyId, created_by: userId })
+        .select("id")
+        .single();
+      if (error) return dbFail(error);
+      const { data: created } = await sb.rpc("generate_subscription_charges", { cid: companyId });
+      await log(`Mensalidade criada: ${a.name}`, "mensalidade", a.clientId);
+      const n = Number(created ?? 0);
+      return {
+        ok: true,
+        message: n
+          ? `Mensalidade criada. ${n === 1 ? "A cobrança deste mês já está" : `${n} cobranças já estão`} no financeiro.`
+          : "Mensalidade criada. A primeira cobrança aparece no financeiro no mês do vencimento.",
+        id: data.id,
+      };
+    }
+
+    case "subscription.cancel": {
+      if (!need("recorrentes.vender")) return fail("Seu papel nesta empresa não permite cancelar mensalidades.");
+      const { error } = await sb.rpc("cancel_subscription", { p_subscription: a.id });
+      if (error) return dbFail(error);
+      return {
+        ok: true,
+        message: "Mensalidade cancelada. Não haverá novas cobranças; as que já existem continuam no financeiro.",
+        id: a.id,
+      };
     }
 
     case "appointment.markReminded": {

@@ -3,10 +3,13 @@
  * As datas são calculadas a partir de "hoje" para que a prévia pareça sempre atual.
  */
 import { addDays, toISODate } from "@/lib/domain/dates";
+import { buildPlan } from "@/lib/domain/installments";
+import { subscriptionChargeDescription, subscriptionPeriods } from "@/lib/domain/recurring";
 import {
   EMPTY_PROFILE,
   type Account,
   type Appointment,
+  type Subscription,
   type CompanyData,
   type Deal,
   type Member,
@@ -36,6 +39,21 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     const start = new Date(y, m - 1, d, hour, minute, 0);
     return { startsAt: start.toISOString(), endsAt: new Date(start.getTime() + durationMin * 60_000).toISOString() };
   };
+  const receivable = (
+    p: Pick<Account, "id" | "clientId" | "description" | "origin" | "amountCents" | "dueDate"> & Partial<Account>,
+  ): Account => ({
+    kind: "receber",
+    supplier: null,
+    saleId: null,
+    installmentNumber: 1,
+    installmentCount: 1,
+    category: null,
+    canceledAt: null,
+    canceledBy: null,
+    cancelReason: null,
+    createdAt: at(-30),
+    ...p,
+  });
   const appointment = (
     p: Pick<Appointment, "id" | "clientId" | "resourceId" | "serviceId" | "priceCents"> &
       Partial<Appointment> & { startsAt: string; endsAt: string },
@@ -46,6 +64,8 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     seriesId: null,
     accountId: null,
     remindedAt: null,
+    packageId: null,
+    consumesPackage: false,
     createdBy: "u-ana",
     createdAt: at(-10),
     ...p,
@@ -520,6 +540,8 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     services: [],
     appointments: [],
     clinicalNotes: [],
+    packages: [],
+    subscriptions: [],
     deals,
     tasks,
     notes,
@@ -544,6 +566,8 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     services: [],
     appointments: [],
     clinicalNotes: [],
+    packages: [],
+    subscriptions: [],
     deals: [],
     tasks: [],
     notes: [],
@@ -567,6 +591,18 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
   });
 
   // ---------- Clínica Bem Viver (ramo: consultório ou clínica) ----------
+  // mensalidade que começou há uns 70 dias: uma cobrança paga, uma atrasada e a deste mês
+  const beatrizPlan: Subscription = {
+    id: "sub-beatriz",
+    clientId: "p-beatriz",
+    name: "Psicoterapia mensal (4 sessões)",
+    amountCents: 80000,
+    dayOfMonth: Math.min(Number(day(-2).slice(8, 10)), 28),
+    startsOn: day(-70),
+    endsOn: null,
+    canceledAt: null,
+    createdAt: at(-70),
+  };
   const clinica: CompanyData = {
     company: {
       ...EMPTY_PROFILE,
@@ -660,6 +696,29 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
         serviceId: "s-psico",
         priceCents: 20000,
         ...slot(1, 10, 0, 50),
+        packageId: "pk-caio",
+      }),
+      appointment({
+        id: "ag-9",
+        clientId: "p-caio",
+        resourceId: "r-helena",
+        serviceId: "s-psico",
+        priceCents: 20000,
+        ...slot(-15, 10, 0, 50),
+        status: "compareceu",
+        packageId: "pk-caio",
+        consumesPackage: true,
+      }),
+      appointment({
+        id: "ag-10",
+        clientId: "p-caio",
+        resourceId: "r-helena",
+        serviceId: "s-psico",
+        priceCents: 20000,
+        ...slot(-8, 10, 0, 50),
+        status: "compareceu",
+        packageId: "pk-caio",
+        consumesPackage: true,
       }),
       appointment({
         id: "ag-7",
@@ -682,25 +741,89 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
       }),
     ],
     accounts: [
-      {
+      receivable({
         id: "a-atend-caio",
-        kind: "receber",
         clientId: "p-caio",
-        supplier: null,
         description: "Sessão de psicoterapia",
         origin: "atendimento",
-        saleId: null,
-        installmentNumber: 1,
-        installmentCount: 1,
         amountCents: 20000,
         dueDate: day(-1),
-        category: null,
-        canceledAt: null,
-        canceledBy: null,
-        cancelReason: null,
         createdAt: at(-1, 11),
+      }),
+      ...buildPlan(180000, 3, day(-16)).map((inst) =>
+        receivable({
+          id: `a-pk-caio-${inst.number}`,
+          clientId: "p-caio",
+          description: "Pacote: 10 sessões de psicoterapia",
+          origin: "pacote",
+          installmentNumber: inst.number,
+          installmentCount: 3,
+          amountCents: inst.amountCents,
+          dueDate: inst.dueDate,
+          createdAt: at(-16),
+          packageId: "pk-caio",
+        }),
+      ),
+      ...subscriptionPeriods(beatrizPlan, today).map((p) =>
+        receivable({
+          id: `a-mens-${p.period}`,
+          clientId: "p-beatriz",
+          description: subscriptionChargeDescription(beatrizPlan.name, p.period),
+          origin: "mensalidade",
+          amountCents: beatrizPlan.amountCents,
+          dueDate: p.dueDate,
+          createdAt: at(-60),
+          subscriptionId: beatrizPlan.id,
+          period: p.period,
+        }),
+      ),
+    ],
+    // a primeira parcela do pacote e a primeira mensalidade já foram pagas
+    movements: [
+      {
+        id: "m-pk-caio-1",
+        accountId: "a-pk-caio-1",
+        direction: "entrada",
+        amountCents: 60000,
+        paidOn: day(-16),
+        method: "pix",
+        registeredBy: "u-ana",
+        createdAt: at(-16, 12),
+        undoneAt: null,
+        undoneBy: null,
+        undoReason: null,
+      },
+      ...subscriptionPeriods(beatrizPlan, today)
+        .slice(0, 1)
+        .map((p) => ({
+          id: `m-mens-${p.period}`,
+          accountId: `a-mens-${p.period}`,
+          direction: "entrada" as const,
+          amountCents: beatrizPlan.amountCents,
+          paidOn: p.dueDate,
+          method: "cartao_credito" as const,
+          registeredBy: "u-ana",
+          createdAt: at(-50),
+          undoneAt: null,
+          undoneBy: null,
+          undoReason: null,
+        })),
+    ],
+    packages: [
+      {
+        id: "pk-caio",
+        clientId: "p-caio",
+        serviceId: "s-psico",
+        itemId: null,
+        name: "10 sessões de psicoterapia",
+        sessionsTotal: 10,
+        priceCents: 180000,
+        validUntil: day(120),
+        closedAt: null,
+        createdAt: at(-16),
       },
     ],
+    subscriptions: [beatrizPlan],
     clinicalNotes: [
       {
         id: "cn-1",
@@ -810,9 +933,37 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
         priceCents: 12000,
         ...slot(1, 9, 0, 120),
         createdBy: "u-karina",
+        packageId: "pk-bob",
       }),
     ],
     clinicalNotes: [],
+    packages: [
+      {
+        id: "pk-bob",
+        clientId: "t-rogerio",
+        serviceId: "s-tosa",
+        itemId: "i-bob",
+        name: "4 banhos e tosa",
+        sessionsTotal: 4,
+        priceCents: 40000,
+        validUntil: day(60),
+        closedAt: null,
+        createdAt: at(-5),
+      },
+    ],
+    accounts: [
+      receivable({
+        id: "a-pk-bob",
+        clientId: "t-rogerio",
+        description: "Pacote: 4 banhos e tosa",
+        origin: "pacote",
+        amountCents: 40000,
+        dueDate: day(-5),
+        createdAt: at(-5),
+        packageId: "pk-bob",
+      }),
+    ],
+    subscriptions: [],
   };
 
   return [aurora, horizonte, clinica, pet];

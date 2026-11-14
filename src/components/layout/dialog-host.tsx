@@ -5,6 +5,8 @@ import { ClientDialog } from "@/features/clients/client-dialog";
 import { ItemDialog } from "@/features/clients/item-dialog";
 import { AppointmentDialog } from "@/features/agenda/appointment-dialog";
 import { NoShowDialog } from "@/features/agenda/no-show-dialog";
+import { PackageDialog } from "@/features/recurring/package-dialog";
+import { SubscriptionDialog } from "@/features/recurring/subscription-dialog";
 import { ResourceDialog } from "@/features/services/resource-dialog";
 import { ServiceDialog } from "@/features/services/service-dialog";
 import { DealDialog } from "@/features/deals/deal-dialog";
@@ -40,6 +42,10 @@ function renderDialog(spec: DialogSpec, props: DialogProps) {
       );
     case "noShow":
       return <NoShowDialog {...props} appointmentId={spec.appointmentId} />;
+    case "package":
+      return <PackageDialog {...props} clientId={spec.clientId} />;
+    case "subscription":
+      return <SubscriptionDialog {...props} clientId={spec.clientId} subscriptionId={spec.subscriptionId} />;
     case "service":
       return <ServiceDialog {...props} serviceId={spec.serviceId} />;
     case "resource":

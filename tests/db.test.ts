@@ -1173,3 +1173,236 @@ describe("agenda no banco", () => {
     expect(await as(prof1, () => count("select 1 from clinical_notes"))).toBe(2);
   });
 });
+
+// Pacotes de sessões e mensalidades (20261114000009 e 20261114000010).
+describe("pacotes e mensalidades no banco", () => {
+  let P = ""; // clínica da Ana
+  let recep = "";
+  let prof = "";
+  let res = "";
+  let svc = "";
+  let pac = "";
+
+  const count = async (sql: string, params: unknown[] = []) =>
+    (await one<{ c: number }>(`select count(*)::int c from (${sql}) q`, params)).c;
+  const plan2 = JSON.stringify([
+    { number: 1, amount_cents: 30000, due_date: "2026-11-20" },
+    { number: 2, amount_cents: 30000, due_date: "2026-12-20" },
+  ]);
+  const sell = (user: string, sessions: number, price: number, planJson: string, req = randomUUID()) =>
+    as(user, () =>
+      one<{ r: { package_id: string; duplicate: boolean } }>(
+        "select public.sell_package($1, $2, null, 'Pacote teste', $3, $4, null, $5::jsonb, $6) as r",
+        [pac, svc, sessions, price, planJson, req],
+      ),
+    );
+  const book = (user: string, pkg: string | null, start: string) =>
+    as(user, () =>
+      one<{ id: string }>(
+        `insert into appointments (company_id, client_id, resource_id, service_id, package_id, starts_at, ends_at, price_cents, created_by)
+         values ($1, $2, $3, $4, $5, $6::timestamptz, $6::timestamptz + interval '50 minutes', 20000, $7) returning id`,
+        [P, pac, res, svc, pkg, start, user],
+      ),
+    );
+  const status = (user: string, ap: string, s: string, charge = false) =>
+    as(user, () =>
+      one<{ r: { account_id: string | null; package_session: boolean } }>(
+        "select public.set_appointment_status($1, $2::appointment_status, $3) as r",
+        [ap, s, charge],
+      ),
+    );
+
+  beforeAll(async () => {
+    recep = await newUser("recep@pacotes.test");
+    prof = await newUser("prof@pacotes.test");
+    P = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Pacotes', 'clinica') as id"))).id;
+    await inviteAndAccept(P, U.ana, "recep@pacotes.test", "{recepcao}", recep);
+    await inviteAndAccept(P, U.ana, "prof@pacotes.test", "{profissional}", prof);
+    await as(U.ana, async () => {
+      res = (
+        await one<{ id: string }>(
+          "insert into resources (company_id, name, user_id) values ($1, 'Prof', $2) returning id",
+          [P, prof],
+        )
+      ).id;
+      svc = (
+        await one<{ id: string }>(
+          "insert into services (company_id, name, duration_min, price_cents) values ($1, 'Sessão', 50, 20000) returning id",
+          [P],
+        )
+      ).id;
+    });
+    pac = (
+      await as(recep, () =>
+        one<{ id: string }>(
+          "insert into clients (company_id, name, owner_id) values ($1, 'Paciente', $2) returning id",
+          [P, prof],
+        ),
+      )
+    ).id;
+  });
+
+  it("a recepção vende em parcelas; repetir o pedido não duplica; o profissional não vende", async () => {
+    const req = randomUUID();
+    const first = await sell(recep, 10, 60000, plan2, req);
+    expect(first.r.duplicate).toBe(false);
+    const again = await sell(recep, 10, 60000, plan2, req);
+    expect(again.r).toEqual({ package_id: first.r.package_id, duplicate: true });
+    const accs = await rows<{
+      origin: string;
+      amount_cents: string;
+      installment_number: number;
+      installment_count: number;
+    }>(
+      "select origin::text, amount_cents::text, installment_number, installment_count from accounts where package_id = $1 order by installment_number",
+      [first.r.package_id],
+    );
+    expect(accs).toEqual([
+      { origin: "pacote", amount_cents: "30000", installment_number: 1, installment_count: 2 },
+      { origin: "pacote", amount_cents: "30000", installment_number: 2, installment_count: 2 },
+    ]);
+    // parcelas que não somam o total
+    await expect(sell(recep, 10, 70000, plan2)).rejects.toThrow(/não confere/);
+    await expect(sell(prof, 10, 60000, plan2)).rejects.toThrow(/não permite vender/);
+    // o pacote só nasce pela função
+    await as(recep, async () => {
+      await expect(
+        db.query(
+          "insert into packages (company_id, client_id, name, sessions_total, request_id, created_by) values ($1, $2, 'X', 1, $3, $4)",
+          [P, pac, randomUUID(), recep],
+        ),
+      ).rejects.toThrow(/permission denied/i);
+    });
+    // o profissional vê o pacote do próprio paciente; a recepção não vê as cobranças
+    expect(await as(prof, () => count("select 1 from packages where company_id = $1", [P]))).toBe(1);
+    expect(await as(recep, () => count("select 1 from accounts where package_id = $1", [first.r.package_id]))).toBe(0);
+    expect(await as(U.ana, () => count("select 1 from accounts where package_id = $1", [first.r.package_id]))).toBe(2);
+  });
+
+  it("atendido com pacote usa sessão sem gerar conta, e não passa do total", async () => {
+    const pkg = (await sell(recep, 1, 0, "[]")).r.package_id;
+    const ap1 = (await book(recep, pkg, "2026-11-20 13:00+00")).id;
+    const ap2 = (await book(recep, pkg, "2026-11-27 13:00+00")).id;
+    const done = await status(prof, ap1, "compareceu");
+    expect(done.r).toMatchObject({ account_id: null, package_session: true });
+    expect(await count("select 1 from appointments where package_id = $1 and consumes_package", [pkg])).toBe(1);
+    // a única sessão já foi usada
+    await expect(status(prof, ap2, "compareceu")).rejects.toThrow(/Todas as sessões/);
+    // desfazer devolve a sessão, e aí o segundo pode usar
+    await status(prof, ap1, "agendado");
+    expect((await status(prof, ap2, "faltou", true)).r.package_session).toBe(true);
+    // o horário não marca "usou o pacote" direto na tabela
+    await as(recep, async () => {
+      await expect(db.query("update appointments set consumes_package = true where id = $1", [ap1])).rejects.toThrow(
+        /permission denied/i,
+      );
+    });
+    // pacote de outro cliente não entra no horário
+    const outro = (
+      await as(recep, () =>
+        one<{ id: string }>("insert into clients (company_id, name, owner_id) values ($1, 'Outro', $2) returning id", [
+          P,
+          prof,
+        ]),
+      )
+    ).id;
+    await as(recep, async () => {
+      await expect(
+        db.query(
+          `insert into appointments (company_id, client_id, resource_id, package_id, starts_at, ends_at, created_by)
+           values ($1, $2, $3, $4, '2026-11-21 13:00+00', '2026-11-21 14:00+00', $5)`,
+          [P, outro, res, pkg, recep],
+        ),
+      ).rejects.toThrow(/row-level security/);
+    });
+  });
+
+  it("encerrar o pacote: só sem horário marcado; depois, não entra em horário novo", async () => {
+    const pkg = (await sell(recep, 5, 0, "[]")).r.package_id;
+    const ap = (await book(recep, pkg, "2026-11-22 13:00+00")).id;
+    await expect(as(recep, () => db.query("select public.close_package($1)", [pkg]))).rejects.toThrow(
+      /horários marcados/,
+    );
+    await status(recep, ap, "cancelado");
+    await as(recep, () => db.query("select public.close_package($1)", [pkg]));
+    await expect(book(recep, pkg, "2026-11-23 13:00+00")).rejects.toThrow(/row-level security/);
+    await expect(as(prof, () => db.query("select public.close_package($1)", [pkg]))).rejects.toThrow(/não permite/);
+  });
+
+  it("mensalidade: cobranças até o mês atual, sem duplicar; cancelada para de gerar", async () => {
+    const start = await one<{ d: string }>(
+      "select (date_trunc('month', current_date) - interval '2 months')::date::text d",
+    );
+    const sub = (
+      await as(recep, () =>
+        one<{ id: string }>(
+          "insert into subscriptions (company_id, client_id, name, amount_cents, day_of_month, starts_on, created_by) values ($1, $2, 'Mensal', 28000, 1, $3, $4) returning id",
+          [P, pac, start.d, recep],
+        ),
+      )
+    ).id;
+    const gen = () => as(recep, () => one<{ n: number }>("select public.generate_subscription_charges($1) as n", [P]));
+    expect((await gen()).n).toBe(3); // dois meses atrás, mês passado e este
+    expect((await gen()).n).toBe(0);
+    const charges = await rows<{ origin: string; period: string; amount_cents: string }>(
+      "select origin::text, period::text, amount_cents::text from accounts where subscription_id = $1 order by period",
+      [sub],
+    );
+    expect(charges).toHaveLength(3);
+    expect(charges.every((c) => c.origin === "mensalidade" && c.amount_cents === "28000")).toBe(true);
+    // uma cobrança por mês, mesmo tentando direto
+    await as(U.ana, async () => {
+      await expect(
+        db.query(
+          "insert into accounts (company_id, kind, client_id, description, origin, amount_cents, due_date, created_by, subscription_id, period) values ($1, 'receber', $2, 'Duplicada', 'avulsa', 1, current_date, $3, $4, $5)",
+          [P, pac, U.ana, sub, charges[0].period],
+        ),
+      ).rejects.toThrow();
+    });
+    // o profissional não cria mensalidade; a recepção não cancela direto na tabela
+    await as(prof, async () => {
+      await expect(
+        db.query(
+          "insert into subscriptions (company_id, client_id, name, amount_cents, day_of_month, starts_on, created_by) values ($1, $2, 'X', 100, 1, current_date, $3)",
+          [P, pac, prof],
+        ),
+      ).rejects.toThrow(/row-level security/);
+    });
+    await as(recep, async () => {
+      await expect(db.query("update subscriptions set canceled_at = now() where id = $1", [sub])).rejects.toThrow(
+        /permission denied/i,
+      );
+      await db.query("select public.cancel_subscription($1)", [sub]);
+      // cancelada não se edita
+      const upd = await db.query("update subscriptions set amount_cents = 1 where id = $1", [sub]);
+      expect(upd.affectedRows ?? 0).toBe(0);
+    });
+    expect((await gen()).n).toBe(0);
+  });
+
+  it("empresa do ramo geral não tem pacotes nem mensalidades", async () => {
+    const cliente = (
+      await as(U.ana, () =>
+        one<{ id: string }>("insert into clients (company_id, name, owner_id) values ($1, 'Geral', $2) returning id", [
+          A,
+          U.ana,
+        ]),
+      )
+    ).id;
+    await as(U.ana, async () => {
+      await expect(
+        db.query("select public.sell_package($1, null, null, 'X', 1, 0, null, '[]'::jsonb, $2)", [
+          cliente,
+          randomUUID(),
+        ]),
+      ).rejects.toThrow(/não está disponível/);
+      await expect(
+        db.query(
+          "insert into subscriptions (company_id, client_id, name, amount_cents, day_of_month, starts_on, created_by) values ($1, $2, 'X', 100, 1, current_date, $3)",
+          [A, cliente, U.ana],
+        ),
+      ).rejects.toThrow(/row-level security/);
+      expect((await one<{ n: number }>("select public.generate_subscription_charges($1) as n", [A])).n).toBe(0);
+    });
+  });
+});

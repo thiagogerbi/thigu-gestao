@@ -38,7 +38,14 @@ import {
   SEGMENTS,
   termsFor,
 } from "@/lib/domain/segments";
-import { STAGE_LABEL, type Activity, type CompanyData, type Member } from "@/lib/domain/types";
+import {
+  packageError,
+  packageView,
+  startsOnError,
+  subscriptionChargeDescription,
+  subscriptionPeriods,
+} from "@/lib/domain/recurring";
+import { STAGE_LABEL, type Activity, type CompanyData, type Member, type Subscription } from "@/lib/domain/types";
 import { visibleData } from "@/lib/domain/visibility";
 
 export interface EngineContext {
@@ -91,6 +98,35 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
     visible.clients.find((c) => c.id === id) && d.clients.find((c) => c.id === id);
   const findVisibleDeal = (id: string) => visible.deals.find((x) => x.id === id) && d.deals.find((x) => x.id === id);
 
+  /** Cobranças da mensalidade até o mês de hoje (igual a generate_subscription_charges no banco). */
+  const generateCharges = (sub: Subscription) => {
+    let created = 0;
+    for (const p of subscriptionPeriods(sub, today)) {
+      if (d.accounts.some((x) => x.subscriptionId === sub.id && x.period === p.period)) continue;
+      d.accounts.push({
+        id: ctx.newId(),
+        kind: "receber",
+        clientId: sub.clientId,
+        supplier: null,
+        description: subscriptionChargeDescription(sub.name, p.period),
+        origin: "mensalidade",
+        saleId: null,
+        installmentNumber: 1,
+        installmentCount: 1,
+        amountCents: sub.amountCents,
+        dueDate: p.dueDate,
+        category: null,
+        canceledAt: null,
+        canceledBy: null,
+        cancelReason: null,
+        createdAt: nowIso,
+        subscriptionId: sub.id,
+        period: p.period,
+      });
+      created++;
+    }
+    return created;
+  };
   const t = termsFor(d.company.segment);
 
   switch (a.type) {
@@ -226,6 +262,14 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
         return fail("Este pet não é deste tutor.", { itemId: "Escolha um pet deste tutor." });
       const slotErr = slotError(a.startsAt, a.endsAt);
       if (slotErr) return fail(slotErr, { endsAt: slotErr });
+      const packageId = a.packageId ?? null;
+      const slotCount = a.id ? 1 : seriesStarts(a.startsAt, a.repeat, a.times).length;
+      if (packageId) {
+        const pkg = d.packages.find((p) => p.id === packageId && p.clientId === client.id);
+        // ao remarcar um horário que já usava o pacote, ele não conta duas vezes
+        const pkgErr = packageError(pkg && packageView(pkg, d.appointments, today, a.id), slotCount);
+        if (pkgErr) return fail(pkgErr, { packageId: pkgErr });
+      }
       const values = {
         clientId: client.id,
         resourceId: resource.id,
@@ -235,6 +279,7 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
         endsAt: a.endsAt,
         priceCents: a.priceCents,
         notes: a.notes,
+        packageId,
       };
       if (a.id) {
         const ap = visible.appointments.some((x) => x.id === a.id)
@@ -268,6 +313,7 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
           seriesId,
           accountId: null,
           remindedAt: null,
+          consumesPackage: false,
           createdBy: me,
           createdAt: nowIso,
         });
@@ -312,7 +358,16 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
         ap.accountId = null;
       }
       let accountId: string | null = null;
-      if ((a.status === "compareceu" || (a.status === "faltou" && a.charge)) && ap.priceCents > 0) {
+      let consume = false;
+      const charge = a.status === "compareceu" || (a.status === "faltou" && a.charge);
+      if (charge && ap.packageId) {
+        const pkg = d.packages.find((p) => p.id === ap.packageId);
+        if (!pkg || pkg.closedAt) return fail("Este pacote foi encerrado. Remarque o horário sem o pacote.");
+        const used = d.appointments.filter((x) => x.packageId === pkg.id && x.consumesPackage && x.id !== ap.id).length;
+        if (used >= pkg.sessionsTotal)
+          return fail("Todas as sessões deste pacote já foram usadas. Remarque o horário sem o pacote.");
+        consume = true;
+      } else if (charge && ap.priceCents > 0) {
         accountId = ctx.newId();
         const service = d.services.find((s) => s.id === ap.serviceId);
         d.accounts.push({
@@ -336,15 +391,139 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
       }
       ap.status = a.status;
       ap.accountId = accountId;
+      ap.consumesPackage = consume;
       const what: Record<typeof a.status, string> = {
         confirmado: "Horário confirmado",
-        compareceu: "Atendimento realizado",
-        faltou: accountId ? "Faltou (falta cobrada)" : "Faltou",
+        compareceu: consume ? "Atendimento realizado (sessão do pacote)" : "Atendimento realizado",
+        faltou: consume ? "Faltou (sessão do pacote usada)" : accountId ? "Faltou (falta cobrada)" : "Faltou",
         cancelado: "Horário cancelado",
         agendado: "Atendimento voltou para agendado",
       };
       log("agenda", what[a.status], ap.clientId);
-      return { ok: true, message: statusMessage(a.status, accountId !== null), id: ap.id };
+      return { ok: true, message: statusMessage(a.status, accountId !== null, consume), id: ap.id };
+    }
+
+    case "package.sell": {
+      if (!moduleEnabled(d.company, "pacotes")) return fail(MODULE_OFF);
+      if (!can(roles, "recorrentes.vender")) return fail("Seu papel nesta empresa não permite vender pacotes.");
+      const client = findVisibleClient(a.clientId);
+      if (!client) return fail(`${t.Cliente} não encontrado.`);
+      if (a.itemId && !d.items.some((i) => i.id === a.itemId && i.clientId === client.id))
+        return fail("Este pet não é deste tutor.", { itemId: "Escolha um pet deste tutor." });
+      if (a.serviceId && !d.services.some((s) => s.id === a.serviceId)) return fail("Serviço não encontrado.");
+      if (a.priceCents > 0) {
+        const check = checkPlan(a.plan, a.priceCents);
+        if (!check.ok) return fail(check.errors[0] ?? "Revise as parcelas.");
+      }
+      const id = ctx.newId();
+      d.packages.push({
+        id,
+        clientId: client.id,
+        serviceId: a.serviceId,
+        itemId: a.itemId,
+        name: a.name,
+        sessionsTotal: a.sessions,
+        priceCents: a.priceCents,
+        validUntil: a.validUntil,
+        closedAt: null,
+        createdAt: nowIso,
+      });
+      if (a.priceCents > 0) {
+        for (const inst of a.plan) {
+          d.accounts.push({
+            id: ctx.newId(),
+            kind: "receber",
+            clientId: client.id,
+            supplier: null,
+            description: `Pacote: ${a.name}`,
+            origin: "pacote",
+            saleId: null,
+            installmentNumber: inst.number,
+            installmentCount: a.plan.length,
+            amountCents: inst.amountCents,
+            dueDate: inst.dueDate,
+            category: null,
+            canceledAt: null,
+            canceledBy: null,
+            cancelReason: null,
+            createdAt: nowIso,
+            packageId: id,
+          });
+        }
+      }
+      log("pacote", `Pacote vendido: ${a.name} (${a.sessions} sessões)`, client.id);
+      return {
+        ok: true,
+        message:
+          a.priceCents > 0
+            ? `Pacote vendido. ${a.plan.length === 1 ? "A cobrança foi" : `As ${a.plan.length} parcelas foram`} para o financeiro.`
+            : "Pacote cadastrado.",
+        id,
+      };
+    }
+
+    case "package.close": {
+      if (!can(roles, "recorrentes.vender")) return fail("Seu papel nesta empresa não permite encerrar pacotes.");
+      const pkg = d.packages.find((p) => p.id === a.id);
+      if (!pkg || !findVisibleClient(pkg.clientId)) return fail("Pacote não encontrado.");
+      if (pkg.closedAt) return { ok: true, message: "Pacote encerrado.", id: pkg.id };
+      if (d.appointments.some((x) => x.packageId === pkg.id && isOpenStatus(x.status)))
+        return fail("Há horários marcados usando este pacote. Remarque-os sem o pacote ou cancele antes de encerrar.");
+      pkg.closedAt = nowIso;
+      log("pacote", `Pacote encerrado: ${pkg.name}`, pkg.clientId);
+      return { ok: true, message: "Pacote encerrado.", id: pkg.id };
+    }
+
+    case "subscription.save": {
+      if (!moduleEnabled(d.company, "mensalidades")) return fail(MODULE_OFF);
+      if (!can(roles, "recorrentes.vender")) return fail("Seu papel nesta empresa não permite criar mensalidades.");
+      const client = findVisibleClient(a.clientId);
+      if (!client) return fail(`${t.Cliente} não encontrado.`);
+      if (a.endsOn && a.endsOn < a.startsOn)
+        return fail("O fim precisa ser depois do início.", { endsOn: "O fim precisa ser depois do início." });
+      const values = { name: a.name, amountCents: a.amountCents, dayOfMonth: a.dayOfMonth, endsOn: a.endsOn };
+      if (a.id) {
+        const sub = d.subscriptions.find((s) => s.id === a.id && s.clientId === client.id);
+        if (!sub || sub.canceledAt) return fail("Mensalidade não encontrada ou já cancelada.");
+        Object.assign(sub, values);
+        generateCharges(sub);
+        return { ok: true, message: "Mensalidade atualizada. Vale para as próximas cobranças.", id: sub.id };
+      }
+      const startErr = startsOnError(a.startsOn, today);
+      if (startErr) return fail(startErr, { startsOn: startErr });
+      const sub = {
+        id: ctx.newId(),
+        clientId: client.id,
+        ...values,
+        startsOn: a.startsOn,
+        canceledAt: null,
+        createdAt: nowIso,
+      };
+      d.subscriptions.push(sub);
+      const created = generateCharges(sub);
+      log("mensalidade", `Mensalidade criada: ${a.name}`, client.id);
+      return {
+        ok: true,
+        message: created
+          ? `Mensalidade criada. ${created === 1 ? "A cobrança deste mês já está" : `${created} cobranças já estão`} no financeiro.`
+          : "Mensalidade criada. A primeira cobrança aparece no financeiro no mês do vencimento.",
+        id: sub.id,
+      };
+    }
+
+    case "subscription.cancel": {
+      if (!can(roles, "recorrentes.vender")) return fail("Seu papel nesta empresa não permite cancelar mensalidades.");
+      const sub = d.subscriptions.find((s) => s.id === a.id);
+      if (!sub || !findVisibleClient(sub.clientId)) return fail("Mensalidade não encontrada.");
+      if (!sub.canceledAt) {
+        sub.canceledAt = nowIso;
+        log("mensalidade", `Mensalidade cancelada: ${sub.name}`, sub.clientId);
+      }
+      return {
+        ok: true,
+        message: "Mensalidade cancelada. Não haverá novas cobranças; as que já existem continuam no financeiro.",
+        id: sub.id,
+      };
     }
 
     case "appointment.markReminded": {

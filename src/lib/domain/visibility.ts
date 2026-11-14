@@ -58,6 +58,8 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
     appointments,
     // prontuário: só quem escreveu lê, nem o administrador
     clinicalNotes: on("prontuario") ? data.clinicalNotes.filter((n) => n.authorId === me) : [],
+    packages: on("pacotes") ? data.packages.filter((p) => clientIds.has(p.clientId)) : [],
+    subscriptions: on("mensalidades") ? data.subscriptions.filter((s) => clientIds.has(s.clientId)) : [],
     deals,
     tasks: allCrm
       ? data.tasks

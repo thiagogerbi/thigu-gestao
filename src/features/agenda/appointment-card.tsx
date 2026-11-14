@@ -93,7 +93,11 @@ export function AppointmentCard({
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <Badge tone={STATUS_TONE[ap.status]}>{STATUS_LABEL[ap.status]}</Badge>
-          {ap.priceCents > 0 && <span className="text-sm tabular text-muted">{formatBRL(ap.priceCents)}</span>}
+          {ap.packageId ? (
+            <span className="text-sm text-muted">{ap.consumesPackage ? "Sessão do pacote" : "Pacote"}</span>
+          ) : (
+            ap.priceCents > 0 && <span className="text-sm tabular text-muted">{formatBRL(ap.priceCents)}</span>
+          )}
         </div>
       </div>
 

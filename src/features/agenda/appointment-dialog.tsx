@@ -18,6 +18,7 @@ import {
 import { isISODate } from "@/lib/domain/dates";
 import { centsToInput, parseBRLToCents } from "@/lib/domain/money";
 import { canAssignClientOwner } from "@/lib/domain/permissions";
+import { packageView } from "@/lib/domain/recurring";
 import { ITEM_KINDS, itemKindFor } from "@/lib/domain/segments";
 import { same } from "@/lib/utils/equality";
 import { useAction, useBackend } from "@/state/backend-context";
@@ -58,6 +59,7 @@ export function AppointmentDialog({
     notes: existing?.notes ?? "",
     repeat: "nao" as Repeat,
     times: "4",
+    packageId: existing?.packageId ?? "",
   };
   const [f, setF] = useState(initial);
   const [errs, setErrs] = useState<Record<string, string>>({});
@@ -92,6 +94,12 @@ export function AppointmentDialog({
   const services = data.services.filter((s) => s.active || s.id === f.serviceId);
   const items = data.items.filter((i) => i.clientId === f.clientId && (i.active || i.id === f.itemId));
   const resource = data.resources.find((r) => r.id === f.resourceId);
+  // pacotes do cliente que ainda têm sessão livre (o que já está neste horário conta como livre)
+  const packages = data.packages
+    .filter((p) => p.clientId === f.clientId)
+    .map((p) => packageView(p, data.appointments, today, appointmentId))
+    .filter((v) => v.usable || v.pkg.id === f.packageId);
+  const usePackage = Boolean(f.packageId);
 
   function pickService(serviceId: string) {
     const s = data.services.find((x) => x.id === serviceId);
@@ -100,6 +108,14 @@ export function AppointmentDialog({
       serviceId,
       duration: s ? String(s.durationMin) : x.duration,
       price: s ? (s.priceCents > 0 ? centsToInput(s.priceCents) : "") : x.price,
+      // se o cliente tem um pacote deste serviço, já vem escolhido
+      packageId:
+        x.packageId ||
+        (data.packages
+          .filter((p) => p.clientId === x.clientId && p.serviceId === serviceId)
+          .map((p) => packageView(p, data.appointments, today, appointmentId))
+          .find((v) => v.usable)?.pkg.id ??
+          ""),
     }));
     clearField("serviceId");
   }
@@ -150,6 +166,7 @@ export function AppointmentDialog({
       repeat: existing ? "nao" : f.repeat,
       times: Number(f.times) || 1,
       allowOverlap,
+      packageId: f.packageId || null,
     });
     if (r.ok) {
       toast({ tone: "success", text: r.message });
@@ -251,6 +268,27 @@ export function AppointmentDialog({
           </SelectField>
         )}
 
+        {packages.length > 0 && (
+          <SelectField
+            label="Usar pacote"
+            value={f.packageId}
+            onChange={(e) => set("packageId")(e.target.value)}
+            error={err("packageId")}
+            hint={
+              usePackage
+                ? "O atendimento desconta uma sessão do pacote e não gera cobrança nova."
+                : "Este cliente tem pacote com sessões livres."
+            }
+          >
+            <option value="">Não usar pacote</option>
+            {packages.map((v) => (
+              <option key={v.pkg.id} value={v.pkg.id}>
+                {v.pkg.name} — {v.free === 1 ? "1 sessão livre" : `${v.free} sessões livres`}
+              </option>
+            ))}
+          </SelectField>
+        )}
+
         <div className="grid gap-4 sm:grid-cols-2">
           <SelectField
             label="Quem atende"
@@ -307,14 +345,21 @@ export function AppointmentDialog({
             onChange={(e) => set("duration")(e.target.value)}
             error={err("duration") ?? fieldErrors.endsAt}
           />
-          <MoneyField
-            label="Valor"
-            optional
-            value={f.price}
-            onChange={(e) => set("price")(e.target.value)}
-            error={err("price")}
-            wrapperClassName="col-span-2 sm:col-span-1"
-          />
+          {usePackage ? (
+            <div className="col-span-2 sm:col-span-1">
+              <p className="mb-1 text-sm font-semibold">Valor</p>
+              <p className="flex min-h-11 items-center text-muted">Pago no pacote</p>
+            </div>
+          ) : (
+            <MoneyField
+              label="Valor"
+              optional
+              value={f.price}
+              onChange={(e) => set("price")(e.target.value)}
+              error={err("price")}
+              wrapperClassName="col-span-2 sm:col-span-1"
+            />
+          )}
         </div>
 
         {!existing && (
