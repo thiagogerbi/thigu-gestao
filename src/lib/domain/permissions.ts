@@ -4,21 +4,30 @@ import type { Client, Deal, Role } from "@/lib/domain/types";
  * Matriz de permissões usada pela interface (para mostrar o que faz sentido)
  * e pelo servidor (para recusar operações). Na versão real, o banco também
  * aplica as mesmas regras por RLS e dentro das funções SQL — esconder botões não basta.
+ *
+ * Clientes e negociações têm permissões separadas: a recepção de uma clínica cadastra pacientes
+ * de todos os profissionais, mas não negocia nem vê vendas.
  */
 export type Capability =
   | "empresa.gerenciar" // membros, papéis e dados da empresa
-  | "crm.ver_todos" // ver clientes e negociações de todos
-  | "crm.editar_todos" // editar clientes e negociações de qualquer responsável
-  | "crm.editar_proprios" // criar e editar os próprios clientes/negociações
+  | "clientes.ver_todos" // ver os clientes de todos
+  | "clientes.editar_todos" // cadastrar e editar clientes de qualquer responsável
+  | "clientes.editar_proprios" // cadastrar e editar os próprios clientes
+  | "crm.ver_todos" // ver negociações de todos
+  | "crm.editar_todos" // editar negociações de qualquer responsável
+  | "crm.editar_proprios" // criar e editar as próprias negociações
   | "venda.fechar" // fechar venda e propor condições
   | "venda.conferir" // conferir venda e criar contas a receber
   | "financeiro.ver" // ver contas a receber/pagar e caixa
   | "financeiro.registrar" // registrar recebimentos/pagamentos, despesas, cancelar e desfazer
   | "recebiveis.ver_proprios"; // vendedor acompanha parcelas das próprias vendas (somente leitura)
 
+const ALL_CLIENTS: Capability[] = ["clientes.ver_todos", "clientes.editar_todos", "clientes.editar_proprios"];
+
 const MATRIX: Record<Role, Capability[]> = {
   admin: [
     "empresa.gerenciar",
+    ...ALL_CLIENTS,
     "crm.ver_todos",
     "crm.editar_todos",
     "crm.editar_proprios",
@@ -28,9 +37,20 @@ const MATRIX: Record<Role, Capability[]> = {
     "financeiro.registrar",
     "recebiveis.ver_proprios",
   ],
-  gestor: ["crm.ver_todos", "crm.editar_todos", "crm.editar_proprios", "venda.fechar", "recebiveis.ver_proprios"],
-  vendedor: ["crm.editar_proprios", "venda.fechar", "recebiveis.ver_proprios"],
-  financeiro: ["crm.ver_todos", "venda.conferir", "financeiro.ver", "financeiro.registrar"],
+  gestor: [
+    ...ALL_CLIENTS,
+    "crm.ver_todos",
+    "crm.editar_todos",
+    "crm.editar_proprios",
+    "venda.fechar",
+    "recebiveis.ver_proprios",
+  ],
+  vendedor: ["clientes.editar_proprios", "crm.editar_proprios", "venda.fechar", "recebiveis.ver_proprios"],
+  financeiro: ["clientes.ver_todos", "crm.ver_todos", "venda.conferir", "financeiro.ver", "financeiro.registrar"],
+  // Papéis dos ramos com atendimento. Agenda, caixa e ficha de atendimento entram com os próximos módulos.
+  recepcao: ALL_CLIENTS,
+  profissional: ["clientes.editar_proprios"],
+  caixa: ALL_CLIENTS,
 };
 
 export function can(roles: readonly Role[], cap: Capability): boolean {
@@ -38,16 +58,25 @@ export function can(roles: readonly Role[], cap: Capability): boolean {
 }
 
 export function canEditClient(roles: readonly Role[], userId: string, client: Pick<Client, "ownerId">): boolean {
-  return can(roles, "crm.editar_todos") || (can(roles, "crm.editar_proprios") && client.ownerId === userId);
+  return can(roles, "clientes.editar_todos") || (can(roles, "clientes.editar_proprios") && client.ownerId === userId);
 }
 
 export function canEditDeal(roles: readonly Role[], userId: string, deal: Pick<Deal, "ownerId">): boolean {
   return can(roles, "crm.editar_todos") || (can(roles, "crm.editar_proprios") && deal.ownerId === userId);
 }
 
-/** Quem pode ser escolhido como responsável ao criar/editar: vendedor só pode escolher a si mesmo. */
+/** Quem pode escolher outro responsável para uma negociação ou tarefa: vendedor só escolhe a si mesmo. */
 export function canAssignOthers(roles: readonly Role[]): boolean {
   return can(roles, "crm.editar_todos");
+}
+
+/** Quem pode escolher outro responsável para um cliente (a recepção cadastra para o profissional). */
+export function canAssignClientOwner(roles: readonly Role[]): boolean {
+  return can(roles, "clientes.editar_todos");
+}
+
+export function usesClients(roles: readonly Role[]): boolean {
+  return can(roles, "clientes.editar_proprios") || can(roles, "clientes.ver_todos");
 }
 
 export function usesCrm(roles: readonly Role[]): boolean {

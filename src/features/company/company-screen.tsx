@@ -3,20 +3,33 @@
 import { Badge, Card, InlineAlert, PageHeader } from "@/components/ui/card";
 import { CompanyLetterhead } from "@/features/company/company-letterhead";
 import { CompanyProfileForm } from "@/features/company/company-profile-form";
-import { ROLE_LABEL, type Role } from "@/lib/domain/types";
+import { CompanySegmentCard } from "@/features/company/company-segment-card";
+import { rolesFor, type Terms } from "@/lib/domain/segments";
+import type { Role } from "@/lib/domain/types";
 import { useBackend, useCan } from "@/state/backend-context";
+import { useTerms } from "@/state/use-terms";
 
-const ROLE_HELP: Record<Role, string> = {
-  admin: "Gerencia a empresa, os membros e os dois módulos. Pode fazer todo o fluxo sozinho.",
-  gestor: "Acompanha clientes, negociações e indicadores comerciais de toda a equipe.",
-  vendedor: "Cuida dos próprios clientes e negociações, fecha vendas e propõe as parcelas.",
+const roleHelp = (t: Terms): Record<Role, string> => ({
+  admin: "Gerencia a empresa, a equipe e todos os módulos. Pode fazer todo o fluxo sozinho.",
+  gestor: `Acompanha ${t.clientes}, negociações e indicadores comerciais de toda a equipe.`,
+  vendedor: `Cuida dos próprios ${t.clientes} e negociações, fecha vendas e propõe as parcelas.`,
   financeiro: "Confere vendas, cria as contas a receber, cadastra despesas e registra pagamentos e recebimentos.",
-};
+  recepcao: `Cadastra e atualiza os ${t.clientes} de toda a equipe. Não vê negociações, vendas nem o financeiro.`,
+  profissional: `Cuida dos próprios ${t.clientes}: cadastra, atualiza e anota. Não vê os ${t.clientes} dos colegas.`,
+  caixa: `Cadastra e consulta os ${t.clientes} de toda a equipe. Não vê negociações, vendas nem o financeiro.`,
+});
 
 /** Lista de membros e papéis. Na versão real, o gerenciamento fica em MembersManager (servidor). */
 export function CompanyScreen({ manager }: { manager?: React.ReactNode }) {
   const { data, me, mode } = useBackend();
   const canDo = useCan();
+  const t = useTerms();
+  const help = roleHelp(t);
+  // papéis do ramo, mais os que alguém da equipe já tem (ex.: empresa que trocou de ramo)
+  const shownRoles = rolesFor(
+    data.company.segment,
+    data.members.flatMap((m) => m.roles),
+  ).filter((r, i, all) => all.indexOf(r) === i);
   return (
     <>
       <PageHeader
@@ -40,6 +53,7 @@ export function CompanyScreen({ manager }: { manager?: React.ReactNode }) {
           <p className="mt-3 text-sm text-muted">Somente o administrador altera estes dados.</p>
         </Card>
       )}
+      <CompanySegmentCard />
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <Card className="p-4">
           <h2 className="mb-3 font-display text-lg font-bold">Membros</h2>
@@ -56,7 +70,7 @@ export function CompanyScreen({ manager }: { manager?: React.ReactNode }) {
                 <div className="flex flex-wrap gap-1">
                   {m.roles.map((r) => (
                     <Badge key={r} tone={r === "admin" ? "navy" : "blue"}>
-                      {ROLE_LABEL[r]}
+                      {t.roleLabel(r)}
                     </Badge>
                   ))}
                 </div>
@@ -68,10 +82,10 @@ export function CompanyScreen({ manager }: { manager?: React.ReactNode }) {
         <Card className="p-4">
           <h2 className="mb-3 font-display text-lg font-bold">O que cada papel faz</h2>
           <dl className="grid gap-3 text-sm">
-            {(Object.keys(ROLE_HELP) as Role[]).map((r) => (
+            {shownRoles.map((r) => (
               <div key={r}>
-                <dt className="font-semibold">{ROLE_LABEL[r]}</dt>
-                <dd className="text-muted">{ROLE_HELP[r]}</dd>
+                <dt className="font-semibold">{t.roleLabel(r)}</dt>
+                <dd className="text-muted">{help[r]}</dd>
               </div>
             ))}
           </dl>

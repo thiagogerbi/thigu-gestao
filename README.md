@@ -139,19 +139,44 @@ As telas usam a mesma interface (`BackendValue`) nas duas versões. Na **prévia
 | Vendedor           | Os próprios clientes e negociações; fechar vendas e propor parcelas; ver parcelas das próprias vendas.                  |
 | Financeiro         | Conferir vendas, criar contas a receber, cadastrar despesas, registrar/desfazer recebimentos e pagamentos. Vê clientes. |
 
+| Recepção | Cadastrar e editar os clientes de toda a equipe e anotar na ficha. Não vê negociações, vendas nem o financeiro. |
+| Profissional | Os próprios clientes: cadastrar, editar e anotar. Não vê os clientes dos colegas. |
+| Caixa | O mesmo que a recepção, por enquanto (o caixa do dia ainda não existe). |
+
 Uma pessoa pode ter vários papéis e participar de várias empresas (seletor "Minha empresa").
+
+### Ramos: o sistema muda conforme o tipo de empresa
+
+Ao criar a empresa, a pessoa escolhe o ramo (dá para trocar depois em **Minha empresa**; nenhum dado é apagado). O ramo define:
+
+- **nomes das telas** — "paciente" na clínica, "tutor" no pet shop, "aluno" nas turmas;
+- **papéis oferecidos à equipe e seus nomes** — "Profissional de saúde", "Mecânico", "Atendente";
+- **campos extras da ficha** — nascimento e convênio na clínica, endereço no pet shop;
+- **módulos ligados** — hoje só os pets do cliente (ramo pet shop); agenda, ordem de serviço e os demais estão no catálogo, mas ainda não foram construídos.
+
+O catálogo fica em `src/lib/domain/segments.ts` e tem um espelho no banco (`_segment_modules`, `_module_min_plan`); um teste compara os dois. Toda ação passa por quatro perguntas:
+
+| Pergunta                      | Onde é respondida                                                          |
+| ----------------------------- | -------------------------------------------------------------------------- |
+| 1. O ramo tem o módulo?       | `moduleEnabled` (aplicativo) e `module_enabled` (banco, nas políticas RLS) |
+| 2. O plano inclui o módulo?   | idem                                                                       |
+| 3. O papel da pessoa permite? | `permissions.ts`, `execute.ts` e as políticas RLS                          |
+| 4. O registro é dela?         | `visibility.ts` e as políticas RLS                                         |
+
+Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é bloqueado por plano. O plano e os módulos extras só mudam direto no banco; o administrador não consegue alterá-los. O limite de pessoas por plano ainda não é aplicado.
 
 ---
 
 ## O que funciona, o que é simulado e o que está pendente
 
-### Testado automaticamente (`npm test` — 56 testes)
+### Testado automaticamente (`npm test` — 81 testes)
 
 - Regras de dinheiro, datas, divisão de parcelas, saldo e situação das contas, totais de proposta e matriz de permissões.
 - **Caso de aceitação completo** no motor da prévia **e no banco** (migrações reais rodando no PGlite):
   venda de R$ 1.500 → 3 × R$ 500 → conferência cria 3 contas vinculadas → R$ 200 na 1ª parcela → parcial com R$ 300 → painel com R$ 1.500 vendidos, R$ 200 recebidos e R$ 1.300 a receber → repetir a confirmação não duplica → **usuário de outra empresa não lê nem altera** → **vendedor não confirma parcelas**.
 - RLS: vendedor não vê contas a pagar nem lança despesas; chave composta impede misturar empresas; histórico não pode ser apagado; o dono faz o fluxo sozinho; numeração e aceite de propostas.
 - Chamadas diretas ao banco (sem passar pela interface): o e-mail do perfil não pode ser trocado para receber o convite de outra pessoa; venda não fecha com parcela sem número, valor ou vencimento; vendedor não aponta a própria negociação para um cliente que não vê; proposta e itens só são gravados pelas funções.
+- Ramos e papéis novos, no motor da prévia **e no banco**: o catálogo do banco é igual ao do aplicativo; só o administrador troca o ramo e ninguém troca o plano; recepção e caixa cuidam dos clientes de todos e o profissional só dos próprios; nenhum dos três vê negociações, vendas ou financeiro; pets só existem com o módulo ligado, são lidos por quem vê o tutor e gravados por quem edita o tutor, nunca entre empresas; trocar de ramo não apaga os campos do ramo anterior.
 - Convites: o vínculo só existe depois do aceite; o convite espera quem ainda não tem conta; e-mail não confirmado não vê nem aceita; recusar e cancelar não criam vínculo; só o administrador convida e cancela; quem teve o acesso removido só volta aceitando um novo convite.
 
 ### Verificado manualmente no navegador (prévia, por mim, assistente de IA)
@@ -187,6 +212,9 @@ Uma pessoa pode ter vários papéis e participar de várias empresas (seletor "M
 - No banco, o administrador só altera as colunas editáveis da empresa (`created_by` ficou protegido), e o formato de cada campo é conferido por `check`.
 
 ### Pendente / próximos passos
+
+- Ramos: as telas de negociações, propostas, financeiro, tarefas e o guia da prévia ainda dizem "cliente" em todos os ramos; a troca de nome vale para o menu, a lista, a ficha, o cadastro e a visão geral.
+- Ramos: agenda, lista de serviços, ficha de atendimento, lembretes e painel inicial por ramo (segunda parte da fase 1 do plano).
 
 - Testes de ponta a ponta (Playwright) contra um Supabase local (`supabase start`, que exige Docker).
 - Enviar o convite por e-mail (hoje o convite existe e exige aceite, mas o administrador avisa a pessoa por conta própria).

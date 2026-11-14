@@ -4,7 +4,34 @@
  * Datas de calendário usam o formato ISO "AAAA-MM-DD"; instantes usam ISO completo.
  */
 
-export type Role = "admin" | "gestor" | "vendedor" | "financeiro";
+export type Role = "admin" | "gestor" | "vendedor" | "financeiro" | "recepcao" | "profissional" | "caixa";
+
+/** Ramo da empresa: define módulos, nomes usados nas telas e papéis (catálogo em segments.ts). */
+export type Segment = "geral" | "clinica" | "beleza" | "pet" | "turmas" | "veiculos" | "balcao" | "pedidos";
+
+/** Plano contratado. A ordem importa: cada plano inclui o que os anteriores têm. */
+export type Plan = "essencial" | "equipe" | "empresa";
+
+/** Módulos que podem ser ligados por ramo e plano (além da base: clientes, tarefas e financeiro). */
+export type ModuleId =
+  | "itens"
+  | "agenda"
+  | "servicos"
+  | "prontuario"
+  | "lembretes"
+  | "pacotes"
+  | "mensalidades"
+  | "turmas"
+  | "comissoes"
+  | "caixa"
+  | "agendamento_online"
+  | "lembrete_automatico"
+  | "ordem_servico"
+  | "estoque"
+  | "pedidos";
+
+/** O que o cliente traz para ser atendido. Hoje só pets; veículos entram com a ordem de serviço. */
+export type ItemKind = "pet";
 
 export type Stage = "novo_contato" | "qualificacao" | "negociacao" | "proposta" | "ganha" | "perdida";
 
@@ -32,6 +59,11 @@ export interface CompanyProfile extends Company {
   brandColor: string | null;
   /** #rrggbb do menu lateral, ou null para um tom escuro automático da cor da marca. */
   menuColor: string | null;
+  segment: Segment;
+  /** Só o Thigu altera (não há tela para isso enquanto não existe cobrança). */
+  plan: Plan;
+  /** Módulos ligados à parte, além dos que o ramo já traz. Só o Thigu altera. */
+  extraModules: ModuleId[];
 }
 
 export const EMPTY_PROFILE: Omit<CompanyProfile, "id" | "name"> = {
@@ -44,6 +76,9 @@ export const EMPTY_PROFILE: Omit<CompanyProfile, "id" | "name"> = {
   logoDataUrl: null,
   brandColor: null,
   menuColor: null,
+  segment: "geral",
+  plan: "empresa",
+  extraModules: [],
 };
 
 export interface Member {
@@ -76,6 +111,21 @@ export interface Client {
   email: string;
   phone: string;
   ownerId: string;
+  /** Campos próprios do ramo (data de nascimento, convênio…), definidos em segments.ts. */
+  extra: Record<string, string>;
+  createdAt: ISODateTime;
+}
+
+/** Pet (e, mais adiante, veículo) ligado a um cliente. Arquivar esconde sem apagar o histórico. */
+export interface ClientItem {
+  id: string;
+  clientId: string;
+  kind: ItemKind;
+  name: string;
+  details: Record<string, string>;
+  /** Aviso que precisa saltar aos olhos: bravo, alérgico, idoso… */
+  alert: string;
+  active: boolean;
   createdAt: ISODateTime;
 }
 
@@ -220,6 +270,7 @@ export interface CompanyData {
   company: CompanyProfile;
   members: Member[];
   clients: Client[];
+  items: ClientItem[];
   deals: Deal[];
   tasks: Task[];
   notes: Note[];
@@ -249,6 +300,9 @@ export const ROLE_LABEL: Record<Role, string> = {
   gestor: "Gestor comercial",
   vendedor: "Vendedor",
   financeiro: "Financeiro",
+  recepcao: "Recepção",
+  profissional: "Profissional",
+  caixa: "Caixa",
 };
 
 export const METHOD_LABEL: Record<PaymentMethod, string> = {

@@ -5,6 +5,7 @@ import { createContext, useContext } from "react";
 /** Todas as janelas que podem ser abertas de qualquer tela, com seus parâmetros. */
 export type DialogSpec =
   | { kind: "client"; clientId?: string }
+  | { kind: "item"; clientId: string; itemId?: string }
   | { kind: "deal"; dealId?: string; clientId?: string }
   | { kind: "task"; taskId?: string; clientId?: string; dealId?: string }
   | { kind: "lostDeal"; dealId: string }

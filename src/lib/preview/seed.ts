@@ -15,7 +15,12 @@ import {
   type Task,
 } from "@/lib/domain/types";
 
-export const PREVIEW_COMPANY_IDS = { aurora: "empresa-aurora", horizonte: "empresa-horizonte" } as const;
+export const PREVIEW_COMPANY_IDS = {
+  aurora: "empresa-aurora",
+  horizonte: "empresa-horizonte",
+  clinica: "empresa-clinica",
+  pet: "empresa-pet",
+} as const;
 
 export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
   const today = toISODate(now);
@@ -33,14 +38,15 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     { userId: "u-diego", name: "Diego Rocha", email: "diego@aurora.exemplo", roles: ["gestor"] },
   ];
 
-  const client = (id: string, name: string, email: string, phone: string, ownerId: string, created: number) => ({
-    id,
-    name,
-    email,
-    phone,
-    ownerId,
-    createdAt: at(created),
-  });
+  const client = (
+    id: string,
+    name: string,
+    email: string,
+    phone: string,
+    ownerId: string,
+    created: number,
+    extra: Record<string, string> = {},
+  ) => ({ id, name, email, phone, ownerId, extra, createdAt: at(created) });
   const clients = [
     client("c-marina", "Marina Costa", "marina@cafe-marina.exemplo", "(11) 90000-1001", "u-bruno", -60),
     client("c-joao", "João Pereira", "joao@paoquente.exemplo", "(11) 90000-1002", "u-bruno", -45),
@@ -488,6 +494,7 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     },
     members: auroraMembers,
     clients,
+    items: [],
     deals,
     tasks,
     notes,
@@ -507,6 +514,7 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
       { userId: "u-fernanda", name: "Fernanda Alves", email: "fernanda@horizonte.exemplo", roles: ["financeiro"] },
     ],
     clients: [],
+    items: [],
     deals: [],
     tasks: [],
     notes: [],
@@ -517,5 +525,107 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     activities: [],
   };
 
-  return [aurora, horizonte];
+  // função (e não um objeto só) para que as empresas não compartilhem as mesmas listas
+  const empty = () => ({
+    deals: [],
+    tasks: [],
+    notes: [],
+    proposals: [],
+    sales: [],
+    accounts: [],
+    movements: [],
+    activities: [],
+  });
+
+  // ---------- Clínica Bem Viver (ramo: consultório ou clínica) ----------
+  const clinica: CompanyData = {
+    company: {
+      ...EMPTY_PROFILE,
+      id: PREVIEW_COMPANY_IDS.clinica,
+      name: "Clínica Bem Viver",
+      segment: "clinica",
+      phone: "(11) 4002-1010",
+    },
+    members: [
+      { userId: "u-ana", name: "Ana Souza", email: "ana@bemviver.exemplo", roles: ["admin"] },
+      { userId: "u-helena", name: "Helena Prado", email: "helena@bemviver.exemplo", roles: ["profissional"] },
+      { userId: "u-igor", name: "Igor Batista", email: "igor@bemviver.exemplo", roles: ["profissional"] },
+      { userId: "u-julia", name: "Júlia Campos", email: "julia@bemviver.exemplo", roles: ["recepcao"] },
+    ],
+    clients: [
+      client("p-beatriz", "Beatriz Nunes", "beatriz@correio.exemplo", "(11) 90000-2001", "u-helena", -90, {
+        nascimento: "1991-03-14",
+        convenio: "Particular",
+      }),
+      client("p-caio", "Caio Ferraz", "", "(11) 90000-2002", "u-helena", -30, {
+        nascimento: "2014-08-02",
+        responsavel: "Renata Ferraz (mãe)",
+      }),
+      client("p-denise", "Denise Araújo", "denise@correio.exemplo", "(11) 90000-2003", "u-igor", -12, {
+        nascimento: "1978-11-25",
+        convenio: "Saúde Mais",
+      }),
+    ],
+    items: [],
+    ...empty(),
+  };
+
+  // ---------- Amigo Fiel Pet Shop (ramo: pet shop ou veterinária) ----------
+  const pet: CompanyData = {
+    company: {
+      ...EMPTY_PROFILE,
+      id: PREVIEW_COMPANY_IDS.pet,
+      name: "Amigo Fiel Pet Shop",
+      segment: "pet",
+      phone: "(11) 4002-2020",
+    },
+    members: [
+      { userId: "u-ana", name: "Ana Souza", email: "ana@amigofiel.exemplo", roles: ["admin"] },
+      { userId: "u-karina", name: "Karina Lopes", email: "karina@amigofiel.exemplo", roles: ["recepcao"] },
+      { userId: "u-leandro", name: "Leandro Dias", email: "leandro@amigofiel.exemplo", roles: ["profissional"] },
+      { userId: "u-marcos", name: "Marcos Teles", email: "marcos@amigofiel.exemplo", roles: ["caixa"] },
+    ],
+    clients: [
+      client("t-paula", "Paula Vieira", "paula@correio.exemplo", "(11) 90000-3001", "u-karina", -70, {
+        endereco: "Rua das Acácias, 45, apto 12",
+      }),
+      client("t-rogerio", "Rogério Sato", "", "(11) 90000-3002", "u-karina", -20),
+      client("t-simone", "Simone Barros", "simone@correio.exemplo", "(11) 90000-3003", "u-leandro", -5),
+    ],
+    items: [
+      {
+        id: "i-thor",
+        clientId: "t-paula",
+        kind: "pet",
+        name: "Thor",
+        details: { especie: "Cão", raca: "Golden retriever", porte: "Grande", peso: "32", nascimento: "2021-05-10" },
+        alert: "",
+        active: true,
+        createdAt: at(-70),
+      },
+      {
+        id: "i-mia",
+        clientId: "t-paula",
+        kind: "pet",
+        name: "Mia",
+        details: { especie: "Gato", raca: "Siamês", porte: "Pequeno", peso: "4" },
+        alert: "Assustada: não deixar perto de cães.",
+        active: true,
+        createdAt: at(-40),
+      },
+      {
+        id: "i-bob",
+        clientId: "t-rogerio",
+        kind: "pet",
+        name: "Bob",
+        details: { especie: "Cão", raca: "Shih-tzu", porte: "Pequeno", peso: "6", nascimento: "2012-01-20" },
+        alert: "Idoso e alérgico a perfume.",
+        active: true,
+        createdAt: at(-20),
+      },
+    ],
+    ...empty(),
+  };
+
+  return [aurora, horizonte, clinica, pet];
 }

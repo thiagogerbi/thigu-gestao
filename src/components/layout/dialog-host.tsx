@@ -2,6 +2,7 @@
 
 import { DialogContext, type DialogProps, type DialogSpec } from "@/components/layout/dialog-context";
 import { ClientDialog } from "@/features/clients/client-dialog";
+import { ItemDialog } from "@/features/clients/item-dialog";
 import { DealDialog } from "@/features/deals/deal-dialog";
 import { LostDealDialog } from "@/features/deals/lost-deal-dialog";
 import { CancelAccountDialog } from "@/features/finance/cancel-account-dialog";
@@ -21,6 +22,8 @@ function renderDialog(spec: DialogSpec, props: DialogProps) {
   switch (spec.kind) {
     case "client":
       return <ClientDialog {...props} clientId={spec.clientId} />;
+    case "item":
+      return <ItemDialog {...props} clientId={spec.clientId} itemId={spec.itemId} />;
     case "deal":
       return <DealDialog {...props} dealId={spec.dealId} clientId={spec.clientId} />;
     case "task":

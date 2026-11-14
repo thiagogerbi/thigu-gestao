@@ -10,11 +10,12 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
   const roles = viewer.roles;
   const me = viewer.userId;
   const allCrm = can(roles, "crm.ver_todos");
+  const allClients = can(roles, "clientes.ver_todos");
   const allFin = can(roles, "financeiro.ver");
 
   const deals = allCrm ? data.deals : data.deals.filter((d) => d.ownerId === me);
   const dealIds = new Set(deals.map((d) => d.id));
-  const clients = allCrm
+  const clients = allClients
     ? data.clients
     : data.clients.filter((c) => c.ownerId === me || deals.some((d) => d.clientId === c.id));
   const clientIds = new Set(clients.map((c) => c.id));
@@ -32,6 +33,7 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
     company: data.company,
     members: data.members,
     clients,
+    items: data.items.filter((i) => clientIds.has(i.clientId)),
     deals,
     tasks: allCrm
       ? data.tasks

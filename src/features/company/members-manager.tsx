@@ -3,20 +3,24 @@ import { Button } from "@/components/ui/button";
 import { TextField } from "@/components/ui/fields";
 import { useToast } from "@/components/ui/toast";
 import { formatDateBR } from "@/lib/domain/dates";
-import { ROLE_LABEL, type CompanyInvite, type Role } from "@/lib/domain/types";
+import { rolesFor } from "@/lib/domain/segments";
+import type { CompanyInvite, Role } from "@/lib/domain/types";
 import { cancelInvite, inviteMember, setMemberRoles } from "@/lib/server/actions";
 import { useBackend } from "@/state/backend-context";
+import { useTerms } from "@/state/use-terms";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-
-const ROLES: Role[] = ["admin", "gestor", "vendedor", "financeiro"];
 
 export function MembersManager({ invites }: { invites: CompanyInvite[] }) {
   const { data, me } = useBackend();
   const router = useRouter();
   const toast = useToast();
+  const t = useTerms();
+  const segment = data.company.segment;
+  // papéis do ramo; o primeiro depois do administrador já vem marcado no convite
+  const inviteRoles = rolesFor(segment);
   const [email, setEmail] = useState("");
-  const [roles, setRoles] = useState<Role[]>(["vendedor"]);
+  const [roles, setRoles] = useState<Role[]>([inviteRoles.find((r) => r !== "admin") ?? "admin"]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const toggle = (r: Role, list: Role[]) => (list.includes(r) ? list.filter((x) => x !== r) : [...list, r]);
@@ -52,7 +56,7 @@ export function MembersManager({ invites }: { invites: CompanyInvite[] }) {
             <p className="font-semibold">{m.name}</p>
             <fieldset className="mt-2 flex flex-wrap gap-2">
               <legend className="sr-only">Papéis de {m.name}</legend>
-              {ROLES.map((r) => (
+              {rolesFor(segment, m.roles).map((r) => (
                 <label key={r} className="flex min-h-9 items-center gap-2 rounded-full border border-line px-3 text-sm">
                   <input
                     type="checkbox"
@@ -63,7 +67,7 @@ export function MembersManager({ invites }: { invites: CompanyInvite[] }) {
                       if (next.length) change(m.userId, next);
                     }}
                   />
-                  {ROLE_LABEL[r]}
+                  {t.roleLabel(r)}
                 </label>
               ))}
             </fieldset>
@@ -87,7 +91,7 @@ export function MembersManager({ invites }: { invites: CompanyInvite[] }) {
                 <div className="min-w-0">
                   <p className="break-all font-semibold">{i.email}</p>
                   <p className="text-sm text-muted">
-                    {i.roles.map((r) => ROLE_LABEL[r]).join(", ")} · convidado em {formatDateBR(i.createdAt)}
+                    {t.roleLabels(i.roles)} · convidado em {formatDateBR(i.createdAt)}
                   </p>
                 </div>
                 <Button
@@ -121,7 +125,7 @@ export function MembersManager({ invites }: { invites: CompanyInvite[] }) {
         />
         <fieldset className="flex flex-wrap gap-2">
           <legend className="mb-1 text-sm font-semibold">Papéis</legend>
-          {ROLES.map((r) => (
+          {inviteRoles.map((r) => (
             <label
               key={r}
               className="flex min-h-9 items-center gap-2 rounded-full border border-line bg-white px-3 text-sm"
@@ -132,7 +136,7 @@ export function MembersManager({ invites }: { invites: CompanyInvite[] }) {
                 checked={roles.includes(r)}
                 onChange={() => setRoles(toggle(r, roles))}
               />
-              {ROLE_LABEL[r]}
+              {t.roleLabel(r)}
             </label>
           ))}
         </fieldset>

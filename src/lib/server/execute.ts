@@ -1,8 +1,17 @@
 import type { Action, ActionResult } from "@/lib/actions/schemas";
 import { checkPlan } from "@/lib/domain/installments";
 import { formatBRL } from "@/lib/domain/money";
-import { can, canAssignOthers, type Capability } from "@/lib/domain/permissions";
+import { can, canAssignClientOwner, canAssignOthers, type Capability } from "@/lib/domain/permissions";
 import { hasProposalErrors, proposalTotalCents, validateProposal } from "@/lib/domain/proposals";
+import {
+  cleanFields,
+  mergeFields,
+  ITEM_KINDS,
+  itemKindFor,
+  SEGMENTS,
+  termsFor,
+  type CompanyFlags,
+} from "@/lib/domain/segments";
 import { STAGE_LABEL, type Role } from "@/lib/domain/types";
 import type { ServerSupabase } from "@/lib/supabase/server";
 import "server-only";
@@ -48,7 +57,29 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
       .from("activities")
       .insert({ company_id: companyId, client_id: clientId, deal_id: dealId, kind, description, actor_id: userId });
 
+  /** Ramo, plano e módulos extras da empresa: decidem campos e módulos disponíveis (perguntas 1 e 2). */
+  const companyFlags = async (): Promise<CompanyFlags | null> => {
+    const { data } = await sb
+      .from("companies")
+      .select("segment, plan, extra_modules")
+      .eq("id", companyId)
+      .maybeSingle();
+    return data ? { segment: data.segment, plan: data.plan, extraModules: data.extra_modules ?? [] } : null;
+  };
+
   switch (a.type) {
+    case "company.setSegment": {
+      if (!need("empresa.gerenciar")) return fail("Somente o administrador troca o ramo da empresa.");
+      const { data, error } = await sb
+        .from("companies")
+        .update({ segment: a.segment })
+        .eq("id", companyId)
+        .select("id");
+      if (error) return dbFail(error);
+      if (!data?.length) return fail("Somente o administrador troca o ramo da empresa.");
+      return { ok: true, message: `Ramo alterado para ${SEGMENTS[a.segment].label}.` };
+    }
+
     case "company.saveProfile": {
       if (!need("empresa.gerenciar")) return fail("Somente o administrador altera os dados da empresa.");
       const { data, error } = await sb
@@ -73,10 +104,27 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
     }
 
     case "client.save": {
-      if (!need("crm.editar_proprios")) return fail(NO_PERMISSION);
-      if (!canAssignOthers(roles) && a.ownerId !== userId)
-        return fail("Você só pode cadastrar clientes sob sua responsabilidade.");
-      const values = { name: a.name, email: a.email, phone: a.phone, owner_id: a.ownerId };
+      if (!need("clientes.editar_proprios")) return fail(NO_PERMISSION);
+      const flags = await companyFlags();
+      if (!flags) return fail("Empresa não encontrada.");
+      const t = termsFor(flags.segment);
+      if (!canAssignClientOwner(roles) && a.ownerId !== userId)
+        return fail(`Você só pode cadastrar ${t.clientes} sob sua responsabilidade.`);
+      const values: Record<string, unknown> = { name: a.name, email: a.email, phone: a.phone, owner_id: a.ownerId };
+      if (a.extra) {
+        const fields = SEGMENTS[flags.segment].clientFields;
+        const extra = cleanFields(fields, a.extra, "extra");
+        if (!extra.ok) return fail("Alguns campos precisam de ajuste.", extra.fieldErrors);
+        // campos gravados por outro ramo ficam guardados (trocar de ramo não apaga nada)
+        const current = a.id
+          ? await sb.from("clients").select("extra").eq("id", a.id).eq("company_id", companyId).maybeSingle()
+          : null;
+        values.extra = mergeFields(
+          fields,
+          (current?.data?.extra as Record<string, string> | undefined) ?? {},
+          extra.value,
+        );
+      }
       if (a.id) {
         const { data, error } = await sb
           .from("clients")
@@ -85,9 +133,9 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
           .eq("company_id", companyId)
           .select("id");
         if (error) return dbFail(error);
-        if (!data?.length) return fail("Cliente não encontrado ou sem permissão para editar.");
-        await log("Dados do cliente atualizados", "cliente", a.id);
-        return { ok: true, message: `Cliente ${a.name} atualizado.`, id: a.id };
+        if (!data?.length) return fail(`${t.Cliente} não encontrado ou sem permissão para editar.`);
+        await log(`Dados do ${t.cliente} atualizados`, "cliente", a.id);
+        return { ok: true, message: `${t.Cliente} ${a.name} atualizado.`, id: a.id };
       }
       const { data, error } = await sb
         .from("clients")
@@ -95,8 +143,53 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
         .select("id")
         .single();
       if (error) return dbFail(error);
-      await log("Cliente cadastrado", "cliente", data.id);
-      return { ok: true, message: `Cliente ${a.name} cadastrado.`, id: data.id };
+      await log(`${t.Cliente} cadastrado`, "cliente", data.id);
+      return { ok: true, message: `${t.Cliente} ${a.name} cadastrado.`, id: data.id };
+    }
+
+    case "item.save": {
+      if (!need("clientes.editar_proprios")) return fail(NO_PERMISSION);
+      const flags = await companyFlags();
+      if (!flags || itemKindFor(flags) !== a.kind)
+        return fail("Este cadastro não está disponível para o ramo da empresa.");
+      const kind = ITEM_KINDS[a.kind];
+      const details = cleanFields(kind.fields, a.details, "details");
+      if (!details.ok) return fail("Alguns campos precisam de ajuste.", details.fieldErrors);
+      const values = { name: a.name, details: details.value, alert: a.alert };
+      if (a.id) {
+        const { data, error } = await sb
+          .from("client_items")
+          .update(values)
+          .eq("id", a.id)
+          .eq("company_id", companyId)
+          .select("id");
+        if (error) return dbFail(error);
+        if (!data?.length) return fail("Cadastro não encontrado ou sem permissão para editar.");
+        await log(`Dados de ${a.name} (${kind.noun[0]}) atualizados`, "cliente", a.clientId);
+        return { ok: true, message: `${a.name} atualizado.`, id: a.id };
+      }
+      const { data, error } = await sb
+        .from("client_items")
+        .insert({ ...values, kind: a.kind, client_id: a.clientId, company_id: companyId, created_by: userId })
+        .select("id")
+        .single();
+      if (error) return dbFail(error);
+      await log(`${a.name} (${kind.noun[0]}) cadastrado`, "cliente", a.clientId);
+      return { ok: true, message: `${a.name} cadastrado.`, id: data.id };
+    }
+
+    case "item.setActive": {
+      if (!need("clientes.editar_proprios")) return fail(NO_PERMISSION);
+      const { data, error } = await sb
+        .from("client_items")
+        .update({ active: a.active })
+        .eq("id", a.id)
+        .eq("company_id", companyId)
+        .select("id, name, client_id");
+      if (error) return dbFail(error);
+      if (!data?.length) return fail("Cadastro não encontrado ou sem permissão para editar.");
+      await log(`${data[0].name} ${a.active ? "voltou para a ficha" : "arquivado"}`, "cliente", data[0].client_id);
+      return { ok: true, message: a.active ? `${data[0].name} voltou para a ficha.` : `${data[0].name} arquivado.` };
     }
 
     case "deal.save": {

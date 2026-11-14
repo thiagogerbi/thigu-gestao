@@ -1,7 +1,8 @@
 "use server";
 
 import { parseAction, type ActionResult } from "@/lib/actions/schemas";
-import type { CompanyData, Role } from "@/lib/domain/types";
+import { SEGMENT_IDS } from "@/lib/domain/segments";
+import type { CompanyData, Role, Segment } from "@/lib/domain/types";
 import { COMPANY_COOKIE } from "@/lib/server/constants";
 import { executeAction } from "@/lib/server/execute";
 import { loadCompanyData } from "@/lib/server/load";
@@ -64,7 +65,7 @@ export async function switchCompany(companyId: string): Promise<boolean> {
   return true;
 }
 
-export async function createCompany(name: string): Promise<ActionResult> {
+export async function createCompany(name: string, segment: string = "geral"): Promise<ActionResult> {
   const s = await session();
   if (!s) return { ok: false, message: "Sua sessão terminou. Entre novamente." };
   const parsed = z.string().trim().min(2, "Digite o nome da empresa (pelo menos 2 letras).").max(120).safeParse(name);
@@ -74,13 +75,16 @@ export async function createCompany(name: string): Promise<ActionResult> {
       message: parsed.error.issues[0].message,
       fieldErrors: { name: parsed.error.issues[0].message },
     };
-  const { data, error } = await s.sb.rpc("create_company", { p_name: parsed.data });
+  if (!SEGMENT_IDS.includes(segment as Segment)) return { ok: false, message: "Escolha o ramo da empresa." };
+  const { data, error } = await s.sb.rpc("create_company", { p_name: parsed.data, p_segment: segment });
   if (error) return { ok: false, message: "Não foi possível criar a empresa agora." };
   await switchCompany(data as string);
   return { ok: true, message: `Empresa ${parsed.data} criada.`, id: data as string };
 }
 
-const roleList = z.array(z.enum(["admin", "gestor", "vendedor", "financeiro"])).min(1, "Escolha pelo menos um papel.");
+const roleList = z
+  .array(z.enum(["admin", "gestor", "vendedor", "financeiro", "recepcao", "profissional", "caixa"]))
+  .min(1, "Escolha pelo menos um papel.");
 
 /** Mensagens que as funções do banco escrevem para a pessoa ler (as demais viram um texto genérico). */
 const DB_MESSAGE_CODES = new Set(["P0001", "P0002", "22023", "42501"]);

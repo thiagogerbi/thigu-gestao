@@ -1,6 +1,8 @@
 import { LOGO_DATA_URL_RE, LOGO_MAX_CHARS } from "@/lib/domain/branding";
 import { isISODate } from "@/lib/domain/dates";
 import { isValidDocument, normalizeDocument } from "@/lib/domain/document";
+import { SEGMENT_IDS } from "@/lib/domain/segments";
+import type { Segment } from "@/lib/domain/types";
 import { z } from "zod";
 
 /**
@@ -19,6 +21,9 @@ const hexColor = z
   .regex(/^#[0-9a-fA-F]{6}$/, "Cor inválida.")
   .transform((v) => v.toLowerCase())
   .nullable();
+
+/** Campos extras por ramo: aqui só o formato; a lista de campos é conferida contra o ramo da empresa. */
+const fieldValues = z.record(z.string().max(40), z.string().max(300));
 
 export const planSchema = z
   .array(z.object({ number: z.number().int().min(1).max(36), amountCents: positiveCents, dueDate: date }))
@@ -58,13 +63,29 @@ export const actionSchema = z.discriminatedUnion("type", [
     menuColor: hexColor,
   }),
   z.object({
+    type: z.literal("company.setSegment"),
+    segment: z.enum(SEGMENT_IDS as [Segment, ...Segment[]]),
+  }),
+  z.object({
     type: z.literal("client.save"),
     id: id.optional(),
-    name: text(120).min(2, "Digite o nome do cliente (pelo menos 2 letras)."),
+    name: text(120).min(2, "Digite o nome (pelo menos 2 letras)."),
     email: z.union([z.literal(""), z.string().trim().email("E-mail inválido. Exemplo: nome@empresa.com.br")]),
     phone: text(30),
     ownerId: id,
+    /** Sem este campo, os dados extras que já existem são mantidos. */
+    extra: fieldValues.optional(),
   }),
+  z.object({
+    type: z.literal("item.save"),
+    id: id.optional(),
+    clientId: id,
+    kind: z.enum(["pet"]),
+    name: text(80).min(1, "Digite o nome."),
+    details: fieldValues,
+    alert: text(200),
+  }),
+  z.object({ type: z.literal("item.setActive"), id, active: z.boolean() }),
   z.object({
     type: z.literal("deal.save"),
     id: id.optional(),

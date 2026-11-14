@@ -8,8 +8,9 @@ import { balanceCents, validateSettlement } from "@/lib/domain/accounts";
 import { addDays, toISODate } from "@/lib/domain/dates";
 import { checkPlan } from "@/lib/domain/installments";
 import { formatBRL } from "@/lib/domain/money";
-import { can, canAssignOthers, canEditClient, canEditDeal } from "@/lib/domain/permissions";
+import { can, canAssignClientOwner, canAssignOthers, canEditClient, canEditDeal } from "@/lib/domain/permissions";
 import { hasProposalErrors, proposalTotalCents, validateProposal } from "@/lib/domain/proposals";
+import { cleanFields, ITEM_KINDS, itemKindFor, mergeFields, SEGMENTS, termsFor } from "@/lib/domain/segments";
 import { STAGE_LABEL, type Activity, type CompanyData, type Member } from "@/lib/domain/types";
 import { visibleData } from "@/lib/domain/visibility";
 
@@ -63,7 +64,15 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
     visible.clients.find((c) => c.id === id) && d.clients.find((c) => c.id === id);
   const findVisibleDeal = (id: string) => visible.deals.find((x) => x.id === id) && d.deals.find((x) => x.id === id);
 
+  const t = termsFor(d.company.segment);
+
   switch (a.type) {
+    case "company.setSegment": {
+      if (!can(roles, "empresa.gerenciar")) return fail("Somente o administrador troca o ramo da empresa.");
+      d.company.segment = a.segment;
+      return { ok: true, message: `Ramo alterado para ${SEGMENTS[a.segment].label}.` };
+    }
+
     case "company.saveProfile": {
       if (!can(roles, "empresa.gerenciar")) return fail("Somente o administrador altera os dados da empresa.");
       const { type: _type, ...profile } = a;
@@ -74,21 +83,74 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
     case "client.save": {
       if (!isMember(a.ownerId))
         return fail("Escolha um responsável que faça parte da empresa.", { ownerId: "Responsável inválido." });
-      if (!canAssignOthers(roles) && a.ownerId !== me)
-        return fail("Você só pode cadastrar clientes sob sua responsabilidade.");
+      if (!canAssignClientOwner(roles) && a.ownerId !== me)
+        return fail(`Você só pode cadastrar ${t.clientes} sob sua responsabilidade.`);
+      const extraFields = SEGMENTS[d.company.segment].clientFields;
+      const extra = a.extra ? cleanFields(extraFields, a.extra, "extra") : null;
+      if (extra && !extra.ok) return fail("Alguns campos precisam de ajuste.", extra.fieldErrors);
       if (a.id) {
         const c = findVisibleClient(a.id);
-        if (!c) return fail("Cliente não encontrado.");
+        if (!c) return fail(`${t.Cliente} não encontrado.`);
         if (!canEditClient(roles, me, c)) return fail(NO_PERMISSION);
         Object.assign(c, { name: a.name, email: a.email, phone: a.phone, ownerId: a.ownerId });
-        log("cliente", "Dados do cliente atualizados", c.id);
-        return { ok: true, message: `Cliente ${c.name} atualizado.`, id: c.id };
+        // campos gravados por outro ramo ficam guardados (trocar de ramo não apaga nada)
+        if (extra) c.extra = mergeFields(extraFields, c.extra, extra.value);
+        log("cliente", `Dados do ${t.cliente} atualizados`, c.id);
+        return { ok: true, message: `${t.Cliente} ${c.name} atualizado.`, id: c.id };
       }
-      if (!can(roles, "crm.editar_proprios")) return fail(NO_PERMISSION);
+      if (!can(roles, "clientes.editar_proprios")) return fail(NO_PERMISSION);
       const id = ctx.newId();
-      d.clients.push({ id, name: a.name, email: a.email, phone: a.phone, ownerId: a.ownerId, createdAt: nowIso });
-      log("cliente", "Cliente cadastrado", id);
-      return { ok: true, message: `Cliente ${a.name} cadastrado.`, id };
+      d.clients.push({
+        id,
+        name: a.name,
+        email: a.email,
+        phone: a.phone,
+        ownerId: a.ownerId,
+        extra: extra?.value ?? {},
+        createdAt: nowIso,
+      });
+      log("cliente", `${t.Cliente} cadastrado`, id);
+      return { ok: true, message: `${t.Cliente} ${a.name} cadastrado.`, id };
+    }
+
+    case "item.save": {
+      if (itemKindFor(d.company) !== a.kind) return fail("Este cadastro não está disponível para o ramo da empresa.");
+      const client = findVisibleClient(a.clientId);
+      if (!client) return fail(`${t.Cliente} não encontrado.`);
+      if (!canEditClient(roles, me, client)) return fail(NO_PERMISSION);
+      const kind = ITEM_KINDS[a.kind];
+      const details = cleanFields(kind.fields, a.details, "details");
+      if (!details.ok) return fail("Alguns campos precisam de ajuste.", details.fieldErrors);
+      if (a.id) {
+        const item = d.items.find((i) => i.id === a.id && i.clientId === client.id);
+        if (!item) return fail("Cadastro não encontrado.");
+        Object.assign(item, { name: a.name, details: details.value, alert: a.alert });
+        log("cliente", `Dados de ${a.name} (${kind.noun[0]}) atualizados`, client.id);
+        return { ok: true, message: `${a.name} atualizado.`, id: item.id };
+      }
+      const id = ctx.newId();
+      d.items.push({
+        id,
+        clientId: client.id,
+        kind: a.kind,
+        name: a.name,
+        details: details.value,
+        alert: a.alert,
+        active: true,
+        createdAt: nowIso,
+      });
+      log("cliente", `${a.name} (${kind.noun[0]}) cadastrado`, client.id);
+      return { ok: true, message: `${a.name} cadastrado.`, id };
+    }
+
+    case "item.setActive": {
+      const item = d.items.find((i) => i.id === a.id);
+      const client = item && findVisibleClient(item.clientId);
+      if (!item || !client || !itemKindFor(d.company)) return fail("Cadastro não encontrado.");
+      if (!canEditClient(roles, me, client)) return fail(NO_PERMISSION);
+      item.active = a.active;
+      log("cliente", `${item.name} ${a.active ? "voltou para a ficha" : "arquivado"}`, client.id);
+      return { ok: true, message: a.active ? `${item.name} voltou para a ficha.` : `${item.name} arquivado.` };
     }
 
     case "deal.save": {

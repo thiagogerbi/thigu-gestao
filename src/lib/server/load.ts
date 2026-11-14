@@ -2,6 +2,7 @@ import type {
   Account,
   Activity,
   Client,
+  ClientItem,
   CompanyData,
   CompanyInvite,
   Deal,
@@ -80,17 +81,19 @@ export async function loadCompanyInvites(sb: ServerSupabase, companyId: string):
 /** Carrega o que o usuário pode ver da empresa. O filtro de permissão é feito pelo banco (RLS). */
 export async function loadCompanyData(sb: ServerSupabase, companyId: string): Promise<CompanyData> {
   const q = (t: string, cols = "*") => sb.from(t).select(cols).eq("company_id", companyId);
-  const [company, members, clients, deals, tasks, notes, proposals, sales, accounts, movements, activities] =
+  const [company, members, clients, items, deals, tasks, notes, proposals, sales, accounts, movements, activities] =
     await Promise.all([
       sb
         .from("companies")
         .select(
-          "id, name, legal_name, document, phone, email, address, default_terms, logo_data_url, brand_color, menu_color",
+          "id, name, legal_name, document, phone, email, address, default_terms, logo_data_url, brand_color, menu_color, segment, plan, extra_modules",
         )
         .eq("id", companyId)
         .single(),
       q("memberships", "user_id, roles, active, profiles(full_name, email)").eq("active", true),
       q("clients").order("name"),
+      // o banco só devolve itens quando o módulo está ligado para a empresa
+      q("client_items").order("created_at"),
       q("deals"),
       q("tasks"),
       q("notes").order("created_at", { ascending: false }).limit(1000),
@@ -100,7 +103,20 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
       q("movements"),
       q("activities").order("created_at", { ascending: false }).limit(1000),
     ]);
-  for (const r of [company, members, clients, deals, tasks, notes, proposals, sales, accounts, movements, activities]) {
+  for (const r of [
+    company,
+    members,
+    clients,
+    items,
+    deals,
+    tasks,
+    notes,
+    proposals,
+    sales,
+    accounts,
+    movements,
+    activities,
+  ]) {
     if (r.error) throw r.error;
   }
   const rows = (r: { data: unknown }) => (r.data ?? []) as Row[];
@@ -119,6 +135,9 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
       logoDataUrl: co.logo_data_url ?? null,
       brandColor: co.brand_color ?? null,
       menuColor: co.menu_color ?? null,
+      segment: co.segment ?? "geral",
+      plan: co.plan ?? "empresa",
+      extraModules: co.extra_modules ?? [],
     },
     members: rows(members).map((m): Member => ({
       userId: m.user_id,
@@ -132,7 +151,18 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
       email: c.email,
       phone: c.phone,
       ownerId: c.owner_id,
+      extra: c.extra ?? {},
       createdAt: c.created_at,
+    })),
+    items: rows(items).map((i): ClientItem => ({
+      id: i.id,
+      clientId: i.client_id,
+      kind: i.kind,
+      name: i.name,
+      details: i.details ?? {},
+      alert: i.alert ?? "",
+      active: i.active,
+      createdAt: i.created_at,
     })),
     deals: rows(deals).map((d): Deal => ({
       id: d.id,

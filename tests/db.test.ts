@@ -6,6 +6,7 @@
  * Limitação: PGlite tem uma única conexão, então concorrência real (duas sessões ao mesmo tempo)
  * NÃO é exercitada; testamos reenvio/idempotência e as travas FOR UPDATE ficam documentadas.
  */
+import { MODULE_IDS, MODULES, SEGMENT_IDS, SEGMENTS } from "@/lib/domain/segments";
 import { PGlite } from "@electric-sql/pglite";
 import { randomUUID } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
@@ -688,5 +689,284 @@ describe("convites", () => {
         db.query("insert into memberships (company_id, user_id, roles) values ($1, $2, '{admin}')", [A, U.outro]),
       ).rejects.toThrow(/permission denied/i);
     });
+  });
+});
+
+// Ramo, plano, módulos e os papéis recepção, profissional e caixa
+// (20261114000005_segment_roles.sql e 20261114000006_segments.sql).
+describe("ramos, módulos e papéis por ramo", () => {
+  let P = ""; // pet shop da Ana
+  let recep = "";
+  let prof = "";
+  let prof2 = "";
+  let caixa = "";
+  let tutor = ""; // cliente do profissional 1, cadastrado pela recepção
+  let tutor2 = ""; // cliente do profissional 2
+  let thor = "";
+  let clienteA = ""; // cliente da Aurora (ramo geral)
+
+  const count = async (sql: string, params: unknown[] = []) =>
+    (await one<{ c: number }>(`select count(*)::int c from (${sql}) q`, params)).c;
+
+  beforeAll(async () => {
+    recep = await newUser("recep@pet.test");
+    prof = await newUser("prof@pet.test");
+    prof2 = await newUser("prof2@pet.test");
+    caixa = await newUser("caixa@pet.test");
+    P = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Amigo Fiel', 'pet') as id"))).id;
+    await inviteAndAccept(P, U.ana, "recep@pet.test", "{recepcao}", recep);
+    await inviteAndAccept(P, U.ana, "prof@pet.test", "{profissional}", prof);
+    await inviteAndAccept(P, U.ana, "prof2@pet.test", "{profissional}", prof2);
+    await inviteAndAccept(P, U.ana, "caixa@pet.test", "{caixa}", caixa);
+    clienteA = (
+      await as(U.ana, () =>
+        one<{ id: string }>(
+          "insert into clients (company_id, name, owner_id) values ($1, 'Cliente geral', $2) returning id",
+          [A, U.ana],
+        ),
+      )
+    ).id;
+  });
+
+  it("o catálogo do banco é igual ao do aplicativo", async () => {
+    for (const s of SEGMENT_IDS) {
+      const r = await one<{ m: string[] }>("select public._segment_modules($1::company_segment) as m", [s]);
+      expect([...r.m].sort(), `módulos do ramo ${s}`).toEqual([...SEGMENTS[s].modules].sort());
+    }
+    for (const m of MODULE_IDS) {
+      const r = await one<{ p: string }>("select public._module_min_plan($1)::text as p", [m]);
+      expect(r.p, `plano mínimo de ${m}`).toBe(MODULES[m].minPlan);
+    }
+    // a lista de módulos extras aceita exatamente os módulos do catálogo
+    await db.query("update companies set extra_modules = $2 where id = $1", [B, MODULE_IDS]);
+    await expect(db.query("update companies set extra_modules = '{inexistente}' where id = $1", [B])).rejects.toThrow();
+    await db.query("update companies set extra_modules = '{}' where id = $1", [B]);
+  });
+
+  it("a empresa nasce com o ramo escolhido; só o administrador troca o ramo e ninguém troca o plano", async () => {
+    const co = (id: string) =>
+      one<{ segment: string; plan: string }>("select segment::text, plan::text from companies where id = $1", [id]);
+    expect(await co(P)).toEqual({ segment: "pet", plan: "empresa" });
+    // empresas criadas sem informar o ramo (e as que já existiam) ficam no ramo geral
+    expect(await co(A)).toEqual({ segment: "geral", plan: "empresa" });
+    await as(U.ana, async () => {
+      await db.query("update companies set segment = 'clinica' where id = $1", [P]);
+      await db.query("update companies set segment = 'pet' where id = $1", [P]);
+      await expect(db.query("update companies set plan = 'essencial' where id = $1", [P])).rejects.toThrow(
+        /permission denied/i,
+      );
+      await expect(db.query("update companies set extra_modules = '{agenda}' where id = $1", [P])).rejects.toThrow(
+        /permission denied/i,
+      );
+    });
+    for (const user of [recep, prof, caixa]) {
+      const upd = await as(user, () => db.query("update companies set segment = 'geral' where id = $1", [P]));
+      expect(upd.affectedRows ?? 0).toBe(0);
+    }
+    expect((await co(P)).segment).toBe("pet");
+  });
+
+  it("módulo ligado depende do ramo, dos extras e do plano", async () => {
+    const on = async (cid: string, m: string) =>
+      (await one<{ on: boolean }>("select public.module_enabled($1, $2) as on", [cid, m])).on;
+    expect(await on(P, "itens")).toBe(true);
+    expect(await on(A, "itens")).toBe(false);
+    expect(await on(P, "agendamento_online")).toBe(true);
+    await db.query("update companies set plan = 'essencial' where id = $1", [P]);
+    expect(await on(P, "agendamento_online")).toBe(false); // plano Equipe em diante
+    expect(await on(P, "itens")).toBe(true);
+    await db.query("update companies set plan = 'empresa' where id = $1", [P]);
+    expect(await on(P, "inexistente")).toBe(false);
+  });
+
+  it("recepção e caixa cuidam dos clientes de todos; o profissional, só dos próprios", async () => {
+    const insertClient = (name: string, owner: string) =>
+      one<{ id: string }>("insert into clients (company_id, name, owner_id) values ($1, $2, $3) returning id", [
+        P,
+        name,
+        owner,
+      ]);
+    tutor = (await as(recep, () => insertClient("Paula Vieira", prof))).id;
+    await as(prof2, async () => {
+      // não cadastra para o colega
+      await expect(insertClient("De outro", prof)).rejects.toThrow(/row-level security/);
+      tutor2 = (await insertClient("Rogério Sato", prof2)).id;
+      expect(await count("select 1 from clients where company_id = $1", [P])).toBe(1);
+      const upd = await db.query("update clients set name = 'invadido' where id = $1", [tutor]);
+      expect(upd.affectedRows ?? 0).toBe(0);
+      // nem passa o próprio cliente para o colega
+      await expect(db.query("update clients set owner_id = $2 where id = $1", [tutor2, prof])).rejects.toThrow(
+        /row-level security/,
+      );
+    });
+    await as(prof, async () => {
+      expect(await rows<{ id: string }>("select id from clients where company_id = $1", [P])).toEqual([{ id: tutor }]);
+      await db.query("update clients set phone = '(11) 90000-0001' where id = $1", [tutor]);
+    });
+    for (const user of [recep, caixa]) {
+      await as(user, async () => {
+        expect(await count("select 1 from clients where company_id = $1", [P])).toBe(2);
+        const upd = await db.query("update clients set email = 'tutor@correio.test' where id = $1", [tutor2]);
+        expect(upd.affectedRows).toBe(1);
+        // anotação na ficha de qualquer cliente
+        await db.query(
+          "insert into notes (company_id, client_id, body, author_id) values ($1, $2, 'Ligou para remarcar', $3)",
+          [P, tutor2, user],
+        );
+      });
+    }
+    // o financeiro continua vendo os clientes sem poder cadastrar (regra que já existia)
+    await as(U.fin, async () => {
+      expect(await count("select 1 from clients where company_id = $1", [A])).toBeGreaterThan(0);
+      await expect(
+        db.query("insert into clients (company_id, name, owner_id) values ($1, 'Pelo financeiro', $2)", [A, U.fin]),
+      ).rejects.toThrow(/row-level security/);
+    });
+  });
+
+  it("recepção, profissional e caixa não veem negociações, vendas nem o financeiro", async () => {
+    const deal = await as(U.ana, () =>
+      one<{ id: string }>(
+        "insert into deals (company_id, client_id, title, value_cents, owner_id) values ($1, $2, 'Pacote de banhos', 40000, $3) returning id",
+        [P, tutor, U.ana],
+      ),
+    );
+    await as(U.ana, () =>
+      db.query(
+        "insert into accounts (company_id, kind, description, origin, amount_cents, due_date, category, created_by) values ($1, 'pagar', 'Aluguel', 'despesa', 300000, '2026-12-05', 'Aluguel', $2)",
+        [P, U.ana],
+      ),
+    );
+    for (const user of [recep, prof, caixa]) {
+      await as(user, async () => {
+        expect(await count("select 1 from deals where company_id = $1", [P])).toBe(0);
+        expect(await count("select 1 from sales where company_id = $1", [P])).toBe(0);
+        expect(await count("select 1 from accounts where company_id = $1", [P])).toBe(0);
+        await expect(
+          db.query(
+            "insert into deals (company_id, client_id, title, value_cents, owner_id) values ($1, $2, 'Minha', 1, $3)",
+            [P, tutor, user],
+          ),
+        ).rejects.toThrow(/row-level security/);
+        await expect(
+          db.query("select public.close_sale($1, null, 40000, 'avista', $2::jsonb, $3)", [
+            deal.id,
+            JSON.stringify([{ number: 1, amount_cents: 40000, due_date: "2026-12-01" }]),
+            randomUUID(),
+          ]),
+        ).rejects.toThrow();
+      });
+    }
+  });
+
+  it("pets: lê quem vê o tutor, grava quem edita o tutor", async () => {
+    const insertPet = (client: string, name: string, by: string) =>
+      one<{ id: string }>(
+        "insert into client_items (company_id, client_id, kind, name, details, created_by) values ($1, $2, 'pet', $3, '{\"especie\":\"Cão\"}', $4) returning id",
+        [P, client, name, by],
+      );
+    thor = (await as(recep, () => insertPet(tutor, "Thor", recep))).id;
+    await as(recep, async () => {
+      // não grava em nome de outra pessoa
+      await expect(insertPet(tutor, "Falso", prof)).rejects.toThrow(/row-level security/);
+    });
+    await as(prof, async () => {
+      expect(await count("select 1 from client_items")).toBe(1);
+      await db.query("update client_items set alert = 'Idoso' where id = $1", [thor]);
+      await insertPet(tutor, "Mia", prof);
+    });
+    await as(prof2, async () => {
+      // tutor de outro profissional: não vê, não cadastra, não altera
+      expect(await count("select 1 from client_items")).toBe(0);
+      await expect(insertPet(tutor, "Intruso", prof2)).rejects.toThrow(/row-level security/);
+      const upd = await db.query("update client_items set name = 'invadido' where id = $1", [thor]);
+      expect(upd.affectedRows ?? 0).toBe(0);
+    });
+    await as(caixa, async () => {
+      expect(await count("select 1 from client_items")).toBe(2);
+    });
+    await as(recep, async () => {
+      // nada é apagado, e o pet não muda de tutor nem de autor
+      await expect(db.query("delete from client_items where id = $1", [thor])).rejects.toThrow(/permission denied/i);
+      await expect(db.query("update client_items set client_id = $2 where id = $1", [thor, tutor2])).rejects.toThrow(
+        /permission denied/i,
+      );
+      await db.query("update client_items set active = false where id = $1", [thor]);
+      await db.query("update client_items set active = true where id = $1", [thor]);
+      // formato dos detalhes conferido pelo banco
+      await expect(db.query("update client_items set details = '[]' where id = $1", [thor])).rejects.toThrow();
+      await expect(db.query("update client_items set name = '  ' where id = $1", [thor])).rejects.toThrow();
+    });
+    expect(
+      await one<{ alert: string; name: string }>("select alert, name from client_items where id = $1", [thor]),
+    ).toEqual({
+      alert: "Idoso",
+      name: "Thor",
+    });
+  });
+
+  it("pets: só com o módulo ligado para a empresa, e nunca misturando empresas", async () => {
+    const insertIn = (company: string, client: string) =>
+      db.query(
+        "insert into client_items (company_id, client_id, kind, name, created_by) values ($1, $2, 'pet', 'Rex', $3)",
+        [company, client, U.ana],
+      );
+    await as(U.ana, async () => {
+      // a Aurora é do ramo geral: o módulo não existe para ela, nem para a administradora
+      await expect(insertIn(A, clienteA)).rejects.toThrow(/row-level security/);
+      // cliente de uma empresa com item de outra: a chave composta barra
+      await expect(insertIn(P, clienteA)).rejects.toThrow();
+    });
+    // ligado à parte pelo Thigu, passa a valer; desligado, os dados ficam guardados mas ninguém lê
+    await db.query("update companies set extra_modules = '{itens}' where id = $1", [A]);
+    await as(U.ana, async () => {
+      await insertIn(A, clienteA);
+      expect(await count("select 1 from client_items where company_id = $1", [A])).toBe(1);
+    });
+    await db.query("update companies set extra_modules = '{}' where id = $1", [A]);
+    await as(U.ana, async () => {
+      expect(await count("select 1 from client_items where company_id = $1", [A])).toBe(0);
+      const upd = await db.query("update client_items set name = 'Rex 2' where company_id = $1", [A]);
+      expect(upd.affectedRows ?? 0).toBe(0);
+    });
+    expect(await count("select 1 from client_items where company_id = $1", [A])).toBe(1);
+    // quem é de outra empresa não lê os pets do pet shop
+    await as(U.outro, async () => {
+      expect(await count("select 1 from client_items")).toBe(0);
+    });
+    await as(U.vend, async () => {
+      expect(await count("select 1 from client_items where company_id = $1", [P])).toBe(0);
+    });
+  });
+
+  it("campos extras do cliente: o banco confere o formato", async () => {
+    await as(recep, async () => {
+      await db.query('update clients set extra = \'{"endereco":"Rua das Acácias, 45"}\' where id = $1', [tutor]);
+      await expect(db.query("update clients set extra = '[]' where id = $1", [tutor])).rejects.toThrow();
+      await expect(
+        db.query("update clients set extra = $2::jsonb where id = $1", [
+          tutor,
+          JSON.stringify({ x: "a".repeat(5000) }),
+        ]),
+      ).rejects.toThrow();
+    });
+    expect((await one<{ extra: unknown }>("select extra from clients where id = $1", [tutor])).extra).toEqual({
+      endereco: "Rua das Acácias, 45",
+    });
+  });
+
+  it("uma pessoa pode acumular papéis antigos e novos", async () => {
+    await as(U.ana, () =>
+      db.query(
+        "select public.set_member_roles($1, $2, '{recepcao,caixa,profissional,financeiro,gestor}'::app_role[], true)",
+        [P, recep],
+      ),
+    );
+    await as(recep, async () => {
+      expect(await count("select 1 from deals where company_id = $1", [P])).toBe(1); // agora também é gestor
+    });
+    await as(U.ana, () =>
+      db.query("select public.set_member_roles($1, $2, '{recepcao}'::app_role[], true)", [P, recep]),
+    );
   });
 });

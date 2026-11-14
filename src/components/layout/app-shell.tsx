@@ -10,18 +10,20 @@ import { ToastProvider } from "@/components/ui/toast";
 import { ClientDrawer } from "@/features/clients/client-drawer";
 import { PreviewTour, type TourMode } from "@/features/tour/preview-tour";
 import { brandCss } from "@/lib/domain/branding";
-import { can, usesCrm } from "@/lib/domain/permissions";
-import { ROLE_LABEL, type Role } from "@/lib/domain/types";
+import { can, usesClients, usesCrm } from "@/lib/domain/permissions";
+import type { Role } from "@/lib/domain/types";
 import { useBackend } from "@/state/backend-context";
+import { useTerms } from "@/state/use-terms";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useState, useSyncExternalStore } from "react";
 
 function useNavItems() {
   const { me, basePath } = useBackend();
+  const t = useTerms();
   const items = [
     { href: basePath, label: "Visão geral", icon: IconHome, show: true },
-    { href: `${basePath}/clientes`, label: "Clientes", icon: IconUsers, show: usesCrm(me.roles) },
+    { href: `${basePath}/clientes`, label: t.Clientes, icon: IconUsers, show: usesClients(me.roles) },
     { href: `${basePath}/negociacoes`, label: "Negociações", icon: IconColumns, show: usesCrm(me.roles) },
     { href: `${basePath}/tarefas`, label: "Tarefas", icon: IconCheck, show: true },
     {
@@ -93,6 +95,7 @@ function Sidebar() {
   const { me, basePath, signOut, data } = useBackend();
   const pathname = usePathname();
   const items = useNavItems();
+  const t = useTerms();
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-navy px-4 py-5 text-white lg:flex print:hidden">
       <Link href={basePath} className="mb-4 block rounded-lg" aria-label={`${data.company.name} — Visão geral`}>
@@ -126,7 +129,7 @@ function Sidebar() {
       </nav>
       <div className="rounded-lg bg-navy-700 p-3 text-sm">
         <p className="font-semibold">{me.name}</p>
-        <p className="text-white/75">{me.roles.map((r) => ROLE_LABEL[r]).join(", ")}</p>
+        <p className="text-white/75">{t.roleLabels(me.roles)}</p>
         {signOut && (
           <button
             type="button"
@@ -209,6 +212,9 @@ const PERSONA_HINT: Record<Role, string> = {
   gestor: "acompanha a equipe de vendas",
   vendedor: "cuida dos próprios clientes",
   financeiro: "cuida do dinheiro",
+  recepcao: "atende e cadastra para toda a equipe",
+  profissional: "atende os próprios clientes",
+  caixa: "recebe no balcão",
 };
 
 const TOUR_CLOSED_KEY = "thigu:guia-fechado";

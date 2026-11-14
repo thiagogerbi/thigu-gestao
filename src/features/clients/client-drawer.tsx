@@ -7,17 +7,21 @@ import { Drawer } from "@/components/ui/overlay";
 import { ClientContact } from "@/features/clients/client-contact";
 import { ClientDealsList } from "@/features/clients/client-deals-list";
 import { ClientHistory, NOTE_FIELD_ID } from "@/features/clients/client-history";
+import { ClientItems } from "@/features/clients/client-items";
 import { ClientNextAction } from "@/features/clients/client-next-action";
 import { ClientProposalsList } from "@/features/clients/client-proposals-list";
 import { ClientSection } from "@/features/clients/client-section";
+import { ExtraFieldsView } from "@/features/clients/extra-fields";
 import { AccountCard } from "@/features/finance/account-card";
 import { formatDateBR } from "@/lib/domain/dates";
 import { isOpenStage } from "@/lib/domain/deals";
 import { formatBRL } from "@/lib/domain/money";
-import { canEditClient } from "@/lib/domain/permissions";
+import { canEditClient, usesCrm } from "@/lib/domain/permissions";
+import { itemKindFor, SEGMENTS } from "@/lib/domain/segments";
 import { useBackend, useCan, useMemberName } from "@/state/backend-context";
 import { accountView, clientById } from "@/state/selectors";
 import { useNav } from "@/state/use-nav";
+import { useTerms } from "@/state/use-terms";
 import { useEffect, useState } from "react";
 
 /**
@@ -30,12 +34,13 @@ export function ClientDrawer() {
   const clientId = nav.params.get("cliente");
   const focusDeal = nav.params.get("negociacao");
   const { data } = useBackend();
+  const t = useTerms();
   const client = clientById(data, clientId);
   if (!clientId) return null;
   if (!client) {
     return (
-      <Drawer open onClose={nav.closeClient} title="Cliente não encontrado">
-        <p>Este cliente não existe nesta empresa ou você não tem acesso a ele.</p>
+      <Drawer open onClose={nav.closeClient} eyebrow={`Ficha do ${t.cliente}`} title={`${t.Cliente} não encontrado`}>
+        <p>Este {t.cliente} não existe nesta empresa ou você não tem acesso a ele.</p>
       </Drawer>
     );
   }
@@ -48,6 +53,12 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
   const name = useMemberName();
   const nav = useNav();
   const dialogs = useDialogs();
+  const t = useTerms();
+  // quem não trabalha com negociações (recepção, profissional, caixa) vê a ficha sem a parte de vendas
+  const showDeals = usesCrm(me.roles);
+  const canDeal = canDo("crm.editar_proprios");
+  const extraFields = SEGMENTS[data.company.segment].clientFields;
+  const itemKind = itemKindFor(data.company);
   // o texto da anotação fica aqui porque a ficha avisa antes de fechar com algo não salvo
   const [note, setNote] = useState("");
   const client = clientById(data, clientId)!;
@@ -109,21 +120,21 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
       run: () => dialogs.open({ kind: "settle", accountId: overdue.account.id, accountKind: "receber" }),
       money: true,
     };
-  } else if (sentProposal && editable) {
+  } else if (sentProposal && editable && canDeal) {
     suggestion = {
       text: `A proposta nº ${sentProposal.number} ainda está sem resposta. Que tal ligar e perguntar?`,
       cta: "Ver proposta",
       run: () => nav.router.push(nav.href(`/propostas/${sentProposal.id}`)),
     };
-  } else if (openDeals.length === 0 && editable) {
+  } else if (openDeals.length === 0 && editable && canDeal) {
     suggestion = {
-      text: "Nenhuma venda em conversa com este cliente agora.",
+      text: `Nenhuma venda em conversa com este ${t.cliente} agora.`,
       cta: "Começar uma negociação",
       run: () => dialogs.open({ kind: "deal", clientId }),
     };
   } else if (mayNote) {
     suggestion = {
-      text: "Conversou com o cliente? Anote o que foi combinado para não esquecer.",
+      text: `Conversou com o ${t.cliente}? Anote o que foi combinado para não esquecer.`,
       cta: "Anotar conversa",
       run: focusNote,
     };
@@ -137,6 +148,7 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
           return;
         nav.closeClient();
       }}
+      eyebrow={`Ficha do ${t.cliente}`}
       title={client.name}
       subtitle={<>Responsável: {name(client.ownerId)}</>}
       headerActions={
@@ -170,12 +182,12 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
             Anotar conversa
           </Button>
         )}
-        {editable && (
+        {editable && canDeal && (
           <Button size="sm" variant="ghost" onClick={() => dialogs.open({ kind: "deal", clientId })}>
             <IconPlus className="h-4 w-4" /> Nova negociação
           </Button>
         )}
-        {editable && openDeals.length > 0 && (
+        {editable && canDeal && openDeals.length > 0 && (
           <Button
             size="sm"
             variant="ghost"
@@ -196,17 +208,21 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
       <ClientSection title="Resumo do relacionamento">
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           <div>
-            <dt className="text-muted">Cliente desde</dt>
+            <dt className="text-muted">{t.Cliente} desde</dt>
             <dd className="font-semibold">{formatDateBR(client.createdAt)}</dd>
           </div>
-          <div>
-            <dt className="text-muted">Negociações abertas</dt>
-            <dd className="font-semibold">{openDeals.length}</dd>
-          </div>
-          <div>
-            <dt className="text-muted">Vendas fechadas</dt>
-            <dd className="font-semibold tabular">{formatBRL(totalSold)}</dd>
-          </div>
+          {showDeals && (
+            <>
+              <div>
+                <dt className="text-muted">Negociações abertas</dt>
+                <dd className="font-semibold">{openDeals.length}</dd>
+              </div>
+              <div>
+                <dt className="text-muted">Vendas fechadas</dt>
+                <dd className="font-semibold tabular">{formatBRL(totalSold)}</dd>
+              </div>
+            </>
+          )}
           {showMoney && (
             <div>
               <dt className="text-muted">Recebido · em aberto</dt>
@@ -218,10 +234,20 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
         </dl>
       </ClientSection>
 
+      {itemKind && <ClientItems clientId={clientId} kind={itemKind} editable={editable} />}
       <ClientNextAction nextAction={nextAction} tasks={tasks} hasOpenDeals={openDeals.length > 0} />
       <ClientContact client={client} />
-      <ClientDealsList clientId={clientId} deals={deals} focusDeal={focusDeal} editable={editable} />
-      <ClientProposalsList proposals={proposals} hasOpenDeals={openDeals.length > 0} />
+      {extraFields.some((f) => client.extra[f.key]) && (
+        <ClientSection title={`Dados do ${t.cliente}`} collapsible defaultOpen>
+          <ExtraFieldsView fields={extraFields} values={client.extra} />
+        </ClientSection>
+      )}
+      {showDeals && (
+        <>
+          <ClientDealsList clientId={clientId} deals={deals} focusDeal={focusDeal} editable={editable && canDeal} />
+          <ClientProposalsList proposals={proposals} hasOpenDeals={openDeals.length > 0} />
+        </>
+      )}
 
       {showMoney && (
         <ClientSection title="Parcelas e pagamentos" collapsible count={accounts.length} defaultOpen={Boolean(overdue)}>

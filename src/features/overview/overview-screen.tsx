@@ -1,7 +1,7 @@
 "use client";
 
 import { useDialogs } from "@/components/layout/dialog-context";
-import { Button } from "@/components/ui/button";
+import { Button, LinkButton } from "@/components/ui/button";
 import { Card, PageHeader } from "@/components/ui/card";
 import { HelpTip } from "@/components/ui/help-tip";
 import {
@@ -19,10 +19,12 @@ import { MoneyJourney } from "@/features/overview/money-journey";
 import { formatDateBR } from "@/lib/domain/dates";
 import { formatBRL } from "@/lib/domain/money";
 import { computeOverview } from "@/lib/domain/overview";
+import { usesCrm } from "@/lib/domain/permissions";
 import { proposalTotalCents } from "@/lib/domain/proposals";
 import { useBackend, useCan } from "@/state/backend-context";
 import { clientById, firstName } from "@/state/selectors";
 import { useNav } from "@/state/use-nav";
+import { useTerms } from "@/state/use-terms";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -62,6 +64,10 @@ export function OverviewScreen() {
   const fin = canDo("financeiro.ver");
   const crm = canDo("crm.editar_proprios");
   const seesReceivables = fin || canDo("recebiveis.ver_proprios");
+  const t = useTerms();
+  // recepção, profissional e caixa não acompanham vendas nem dinheiro: veem um resumo dos clientes
+  const followsSales = usesCrm(me.roles) || fin;
+  const mayAddClient = canDo("clientes.editar_proprios");
 
   // Avisos em ordem de urgência: dinheiro atrasado primeiro, depois o que trava o fluxo, depois o dia a dia.
   const priorities: Priority[] = [];
@@ -189,6 +195,10 @@ export function OverviewScreen() {
       <Button size="lg" onClick={() => dialogs.open({ kind: "deal" })}>
         <IconPlus className="h-5 w-5" /> Nova negociação
       </Button>
+    ) : mayAddClient ? (
+      <Button size="lg" onClick={() => dialogs.open({ kind: "client" })}>
+        <IconPlus className="h-5 w-5" /> Novo {t.cliente}
+      </Button>
     ) : null;
 
   return (
@@ -298,7 +308,25 @@ export function OverviewScreen() {
         )}
       </section>
 
-      <MoneyJourney ov={ov} />
+      {followsSales ? (
+        <MoneyJourney ov={ov} />
+      ) : (
+        <Card className="p-5">
+          <h2 className="font-display text-lg font-bold">{t.Clientes}</h2>
+          <p className="text-muted">
+            {data.clients.length === 0
+              ? `Nenhum ${t.cliente} ${canDo("clientes.ver_todos") ? "cadastrado" : "sob seus cuidados"} ainda.`
+              : canDo("clientes.ver_todos")
+                ? `${plural(data.clients.length, `${t.cliente} cadastrado`, `${t.clientes} cadastrados`)}.`
+                : `${plural(data.clients.length, t.cliente, t.clientes)} sob seus cuidados.`}
+          </p>
+          <div className="mt-3">
+            <LinkButton href={nav.href("/clientes")} variant="secondary">
+              Ver {t.clientes}
+            </LinkButton>
+          </div>
+        </Card>
+      )}
 
       {seesReceivables && (
         <section aria-labelledby="dinheiro">
