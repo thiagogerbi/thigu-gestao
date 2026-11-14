@@ -5,17 +5,20 @@
  */
 import { parseAction, type Action, type ActionResult } from "@/lib/actions/schemas";
 import { balanceCents, validateSettlement } from "@/lib/domain/accounts";
-import { addDays, toISODate } from "@/lib/domain/dates";
+import { expectedCash, openSession } from "@/lib/domain/cash";
+import { classError, seatsTaken } from "@/lib/domain/classes";
+import { commissionSummary, isPastMonth } from "@/lib/domain/commissions";
+import { addDays, addMonths, toISODate } from "@/lib/domain/dates";
+import { workHoursError } from "@/lib/domain/hours";
 import { checkPlan } from "@/lib/domain/installments";
 import { formatBRL } from "@/lib/domain/money";
 import {
   addMinutes,
   allowedStatuses,
-  conflictsFor,
   durationMinutes,
   isOpenStatus,
   MODULE_OFF,
-  overlapMessage,
+  scheduleWarning,
   seriesStarts,
   slotError,
   statusMessage,
@@ -238,15 +241,20 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
         return fail("Escolha alguém da equipe.", { userId: "Pessoa não encontrada na equipe." });
       if (a.userId && d.resources.some((r) => r.userId === a.userId && r.id !== a.id))
         return fail("Esta pessoa já tem uma agenda.", { userId: "Esta pessoa já tem uma agenda." });
+      if (a.workHours) {
+        const hoursErr = workHoursError(a.workHours);
+        if (hoursErr) return fail(hoursErr, { workHours: hoursErr });
+      }
       const values = { name: a.name, userId: a.userId, active: a.active };
       if (a.id) {
         const r = d.resources.find((x) => x.id === a.id);
         if (!r) return fail("Agenda não encontrada.");
         Object.assign(r, values);
+        if (a.workHours) r.workHours = a.workHours;
         return { ok: true, message: `Agenda de ${a.name} salva.`, id: r.id };
       }
       const id = ctx.newId();
-      d.resources.push({ id, ...values });
+      d.resources.push({ id, ...values, workHours: a.workHours ?? {} });
       return { ok: true, message: `Agenda de ${a.name} criada.`, id };
     }
 
@@ -287,9 +295,16 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
           : undefined;
         if (!ap) return fail("Atendimento não encontrado.");
         if (!isOpenStatus(ap.status)) return fail("Este atendimento já foi encerrado. Desfaça antes de remarcar.");
-        const busy = conflictsFor(d.appointments, { ...values, ignoreId: ap.id }).length;
-        if (busy && !a.allowOverlap)
-          return fail(overlapMessage(1, resource.name), { overlap: overlapMessage(1, resource.name) });
+        const warn = scheduleWarning({
+          resourceId: resource.id,
+          resourceName: resource.name,
+          workHours: resource.workHours,
+          appointments: d.appointments,
+          blocks: d.blocks,
+          slots: [{ startsAt: a.startsAt, endsAt: a.endsAt }],
+          ignoreId: ap.id,
+        });
+        if (warn && !a.allowOverlap) return fail(warn, { overlap: warn });
         Object.assign(ap, values);
         log("agenda", `Horário remarcado com ${resource.name}`, client.id);
         return { ok: true, message: "Horário atualizado.", id: ap.id };
@@ -299,9 +314,15 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
         startsAt: s,
         endsAt: addMinutes(s, minutes),
       }));
-      const busy = slots.filter((s) => conflictsFor(d.appointments, { resourceId: resource.id, ...s }).length).length;
-      if (busy && !a.allowOverlap)
-        return fail(overlapMessage(busy, resource.name), { overlap: overlapMessage(busy, resource.name) });
+      const warn = scheduleWarning({
+        resourceId: resource.id,
+        resourceName: resource.name,
+        workHours: resource.workHours,
+        appointments: d.appointments,
+        blocks: d.blocks,
+        slots,
+      });
+      if (warn && !a.allowOverlap) return fail(warn, { overlap: warn });
       const seriesId = slots.length > 1 ? ctx.newId() : null;
       const ids = slots.map((s) => {
         const id = ctx.newId();
@@ -523,6 +544,370 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
         ok: true,
         message: "Mensalidade cancelada. Não haverá novas cobranças; as que já existem continuam no financeiro.",
         id: sub.id,
+      };
+    }
+
+    case "block.create": {
+      if (!moduleEnabled(d.company, "agenda")) return fail(MODULE_OFF);
+      const resource = d.resources.find((r) => r.id === a.resourceId);
+      if (!resource || !canManageResource(roles, me, resource))
+        return fail("Você só pode bloquear a sua própria agenda.");
+      const ms = new Date(a.endsAt).getTime() - new Date(a.startsAt).getTime();
+      if (!(ms > 0))
+        return fail("O fim precisa ser depois do início.", { endsAt: "O fim precisa ser depois do início." });
+      if (ms > 60 * 86_400_000) return fail("Bloqueie no máximo 60 dias de cada vez.", { endsAt: "Use até 60 dias." });
+      const id = ctx.newId();
+      d.blocks.push({
+        id,
+        resourceId: resource.id,
+        startsAt: a.startsAt,
+        endsAt: a.endsAt,
+        reason: a.reason,
+        createdBy: me,
+      });
+      return { ok: true, message: `Agenda de ${resource.name} bloqueada.`, id };
+    }
+
+    case "block.delete": {
+      const b = d.blocks.find((x) => x.id === a.id);
+      if (
+        !b ||
+        !canManageResource(
+          roles,
+          me,
+          d.resources.find((r) => r.id === b.resourceId),
+        )
+      )
+        return fail("Bloqueio não encontrado.");
+      d.blocks = d.blocks.filter((x) => x.id !== a.id);
+      return { ok: true, message: "Bloqueio removido.", id: a.id };
+    }
+
+    case "product.save": {
+      if (!moduleEnabled(d.company, "caixa")) return fail(MODULE_OFF);
+      if (!can(roles, "produtos.gerenciar")) return fail("Somente o administrador ou o gestor cadastram produtos.");
+      const values = { name: a.name, priceCents: a.priceCents, active: a.active };
+      if (a.id) {
+        const p = d.products.find((x) => x.id === a.id);
+        if (!p) return fail("Produto não encontrado.");
+        Object.assign(p, values);
+        return { ok: true, message: `Produto ${a.name} salvo.`, id: p.id };
+      }
+      const id = ctx.newId();
+      d.products.push({ id, ...values });
+      return { ok: true, message: `Produto ${a.name} cadastrado.`, id };
+    }
+
+    case "cash.open": {
+      if (!moduleEnabled(d.company, "caixa") || !can(roles, "caixa.operar"))
+        return fail("Seu papel nesta empresa não permite usar o caixa.");
+      if (openSession(d.cashSessions)) return fail("O caixa já está aberto.");
+      const id = ctx.newId();
+      d.cashSessions.push({
+        id,
+        openedBy: me,
+        openedAt: nowIso,
+        openingCents: a.openingCents,
+        closedBy: null,
+        closedAt: null,
+        expectedCents: null,
+        countedCents: null,
+        notes: "",
+      });
+      return { ok: true, message: `Caixa aberto com ${formatBRL(a.openingCents)} de troco.`, id };
+    }
+
+    case "cash.sale": {
+      const session = d.cashSessions.find((s) => s.id === a.sessionId);
+      if (!moduleEnabled(d.company, "caixa") || !can(roles, "caixa.operar") || !session)
+        return fail("Caixa não encontrado.");
+      if (session.closedAt) return fail("Este caixa já foi fechado. Abra o caixa de novo.");
+      if (a.clientId && !findVisibleClient(a.clientId)) return fail(`${t.Cliente} não encontrado.`);
+      const total = a.items.reduce((s, i) => s + i.quantity * i.unitCents, 0);
+      const accountId = ctx.newId();
+      d.accounts.push({
+        id: accountId,
+        kind: "receber",
+        clientId: a.clientId,
+        supplier: null,
+        description: `Venda no caixa: ${a.items[0].description}${a.items.length > 1 ? ` e mais ${a.items.length - 1}` : ""}`,
+        origin: "caixa",
+        saleId: null,
+        installmentNumber: 1,
+        installmentCount: 1,
+        amountCents: total,
+        dueDate: today,
+        category: null,
+        canceledAt: null,
+        canceledBy: null,
+        cancelReason: null,
+        createdAt: nowIso,
+      });
+      for (const i of a.items) d.cashSaleItems.push({ id: ctx.newId(), accountId, ...i });
+      d.movements.push({
+        id: ctx.newId(),
+        accountId,
+        direction: "entrada",
+        amountCents: total,
+        paidOn: today,
+        method: a.method,
+        registeredBy: me,
+        createdAt: nowIso,
+        undoneAt: null,
+        undoneBy: null,
+        undoReason: null,
+        cashSessionId: session.id,
+      });
+      if (a.clientId) log("caixa", `Venda no caixa: ${formatBRL(total)}`, a.clientId);
+      return { ok: true, message: `Venda de ${formatBRL(total)} registrada.`, id: accountId };
+    }
+
+    case "cash.receive": {
+      const session = d.cashSessions.find((s) => s.id === a.sessionId);
+      if (!moduleEnabled(d.company, "caixa") || !can(roles, "caixa.operar") || !session)
+        return fail("Caixa não encontrado.");
+      if (session.closedAt) return fail("Este caixa já foi fechado. Abra o caixa de novo.");
+      const acc = visible.accounts.find((x) => x.id === a.accountId && x.kind === "receber");
+      if (!acc) return fail("Conta não encontrada.");
+      if (acc.canceledAt) return fail("Esta conta foi cancelada.");
+      const balance = balanceCents(acc, d.movements);
+      if (a.amountCents > balance)
+        return fail(`O valor passa do que falta receber (${formatBRL(balance)}).`, {
+          amountCents: "Valor acima do que falta.",
+        });
+      d.movements.push({
+        id: ctx.newId(),
+        accountId: acc.id,
+        direction: "entrada",
+        amountCents: a.amountCents,
+        paidOn: today,
+        method: a.method,
+        registeredBy: me,
+        createdAt: nowIso,
+        undoneAt: null,
+        undoneBy: null,
+        undoReason: null,
+        cashSessionId: session.id,
+      });
+      if (acc.clientId)
+        log("caixa", `Recebido no caixa: ${formatBRL(a.amountCents)} (${acc.description})`, acc.clientId);
+      const left = balance - a.amountCents;
+      return {
+        ok: true,
+        message:
+          left > 0
+            ? `Recebido ${formatBRL(a.amountCents)}. Faltam ${formatBRL(left)}.`
+            : `Recebido ${formatBRL(a.amountCents)}. Conta quitada.`,
+        id: acc.id,
+      };
+    }
+
+    case "cash.close": {
+      if (!can(roles, "caixa.fechar")) return fail("Somente o financeiro ou o dono fecham o caixa.");
+      const session = d.cashSessions.find((s) => s.id === a.sessionId);
+      if (!session) return fail("Caixa não encontrado.");
+      if (session.closedAt) return fail("Este caixa já foi fechado.");
+      const expected = expectedCash(session, d.movements);
+      Object.assign(session, {
+        closedAt: nowIso,
+        closedBy: me,
+        expectedCents: expected,
+        countedCents: a.countedCents,
+        notes: a.notes,
+      });
+      const diff = a.countedCents - expected;
+      return {
+        ok: true,
+        message:
+          diff === 0
+            ? "Caixa fechado. O dinheiro conferiu."
+            : diff > 0
+              ? `Caixa fechado. Sobraram ${formatBRL(diff)} na gaveta.`
+              : `Caixa fechado. Faltaram ${formatBRL(-diff)} na gaveta.`,
+        id: session.id,
+      };
+    }
+
+    case "commissionRule.save": {
+      if (!moduleEnabled(d.company, "comissoes")) return fail(MODULE_OFF);
+      if (!can(roles, "comissoes.configurar")) return fail("Somente o administrador configura as comissões.");
+      if ((a.percentBp === null) === (a.fixedCents === null)) return fail("Escolha porcentagem ou valor fixo.");
+      if (a.resourceId && !d.resources.some((r) => r.id === a.resourceId)) return fail("Agenda não encontrada.");
+      if (a.serviceId && !d.services.some((s) => s.id === a.serviceId)) return fail("Serviço não encontrado.");
+      const same = d.commissionRules.find(
+        (r) => r.resourceId === a.resourceId && r.serviceId === a.serviceId && r.id !== a.id,
+      );
+      if (same) return fail("Já existe uma regra para esta combinação. Edite a que já existe.");
+      const values = {
+        resourceId: a.resourceId,
+        serviceId: a.serviceId,
+        percentBp: a.percentBp,
+        fixedCents: a.fixedCents,
+      };
+      if (a.id) {
+        const r = d.commissionRules.find((x) => x.id === a.id);
+        if (!r) return fail("Regra não encontrada.");
+        Object.assign(r, { percentBp: a.percentBp, fixedCents: a.fixedCents });
+        return { ok: true, message: "Regra de comissão salva.", id: r.id };
+      }
+      const id = ctx.newId();
+      d.commissionRules.push({ id, ...values });
+      return { ok: true, message: "Regra de comissão criada.", id };
+    }
+
+    case "commissionRule.delete": {
+      if (!can(roles, "comissoes.configurar")) return fail("Somente o administrador configura as comissões.");
+      if (!d.commissionRules.some((r) => r.id === a.id)) return fail("Regra não encontrada.");
+      d.commissionRules = d.commissionRules.filter((r) => r.id !== a.id);
+      return { ok: true, message: "Regra removida.", id: a.id };
+    }
+
+    case "commission.close": {
+      if (!moduleEnabled(d.company, "comissoes")) return fail(MODULE_OFF);
+      if (!can(roles, "comissoes.fechar")) return fail("Somente o financeiro ou o dono fecham comissões.");
+      const resource = d.resources.find((r) => r.id === a.resourceId);
+      if (!resource) return fail("Agenda não encontrada.");
+      if (!a.month.endsWith("-01")) return fail("Mês inválido.");
+      if (!isPastMonth(a.month, today)) return fail("Só dá para fechar um mês que já terminou.");
+      if (d.commissionClosings.some((c) => c.resourceId === resource.id && c.month === a.month))
+        return fail("As comissões deste mês já foram fechadas.");
+      const sum = commissionSummary({
+        resourceId: resource.id,
+        month: a.month,
+        appointments: d.appointments,
+        packages: d.packages,
+        rules: d.commissionRules,
+      });
+      let accountId: string | null = null;
+      const label = `${a.month.slice(5, 7)}/${a.month.slice(0, 4)}`;
+      if (sum.amountCents > 0) {
+        accountId = ctx.newId();
+        d.accounts.push({
+          id: accountId,
+          kind: "pagar",
+          clientId: null,
+          supplier: resource.name,
+          description: `Comissão ${label} — ${resource.name}`,
+          origin: "comissao",
+          saleId: null,
+          installmentNumber: 1,
+          installmentCount: 1,
+          amountCents: sum.amountCents,
+          dueDate: addDays(addMonths(a.month, 1), 4),
+          category: "Salários",
+          canceledAt: null,
+          canceledBy: null,
+          cancelReason: null,
+          createdAt: nowIso,
+        });
+      }
+      d.commissionClosings.push({
+        id: ctx.newId(),
+        resourceId: resource.id,
+        month: a.month,
+        appointments: sum.lines.length,
+        baseCents: sum.baseCents,
+        amountCents: sum.amountCents,
+        accountId,
+        closedAt: nowIso,
+      });
+      return {
+        ok: true,
+        message:
+          sum.amountCents > 0
+            ? `Comissão de ${resource.name} fechada: ${formatBRL(sum.amountCents)}. A conta a pagar foi para o financeiro.`
+            : `Mês fechado para ${resource.name}, sem comissão a pagar.`,
+        id: resource.id,
+      };
+    }
+
+    case "class.save": {
+      if (!moduleEnabled(d.company, "turmas")) return fail(MODULE_OFF);
+      if (!can(roles, "turmas.gerenciar")) return fail("Somente o administrador ou o gestor criam turmas.");
+      const err = classError(a);
+      if (err) return fail(err);
+      if (a.resourceId && !d.resources.some((r) => r.id === a.resourceId)) return fail("Instrutor não encontrado.");
+      const values = {
+        name: a.name,
+        resourceId: a.resourceId,
+        weekdays: [...new Set(a.weekdays)].sort(),
+        startTime: a.startTime,
+        durationMin: a.durationMin,
+        capacity: a.capacity,
+        active: a.active,
+      };
+      if (a.id) {
+        const c = d.classes.find((x) => x.id === a.id);
+        if (!c) return fail("Turma não encontrada.");
+        Object.assign(c, values);
+        return { ok: true, message: `Turma ${a.name} salva.`, id: c.id };
+      }
+      const id = ctx.newId();
+      d.classes.push({ id, ...values });
+      return { ok: true, message: `Turma ${a.name} criada.`, id };
+    }
+
+    case "enrollment.create": {
+      if (!moduleEnabled(d.company, "turmas")) return fail(MODULE_OFF);
+      if (!can(roles, "turmas.matricular")) return fail("Seu papel nesta empresa não permite matricular.");
+      const cls = d.classes.find((c) => c.id === a.classId);
+      const client = findVisibleClient(a.clientId);
+      if (!cls || !client) return fail("Turma ou aluno não encontrado.");
+      if (d.enrollments.some((e) => e.classId === cls.id && e.clientId === client.id && !e.endedOn))
+        return fail(`${client.name} já está nesta turma.`);
+      if (seatsTaken(d.enrollments, cls.id) >= cls.capacity) return fail(`A turma está cheia (${cls.capacity} vagas).`);
+      const id = ctx.newId();
+      d.enrollments.push({ id, classId: cls.id, clientId: client.id, startedOn: today, endedOn: null });
+      log("turma", `Matrícula na turma ${cls.name}`, client.id);
+      return { ok: true, message: `${client.name} matriculado(a) em ${cls.name}.`, id };
+    }
+
+    case "enrollment.end": {
+      if (!can(roles, "turmas.matricular")) return fail("Seu papel nesta empresa não permite mexer em matrículas.");
+      const e = d.enrollments.find((x) => x.id === a.id);
+      if (!e || !findVisibleClient(e.clientId)) return fail("Matrícula não encontrada.");
+      if (!e.endedOn) e.endedOn = today < e.startedOn ? e.startedOn : today;
+      const cls = d.classes.find((c) => c.id === e.classId);
+      log("turma", `Saiu da turma ${cls?.name ?? ""}`.trim(), e.clientId);
+      return { ok: true, message: "Matrícula encerrada. A vaga ficou livre.", id: e.id };
+    }
+
+    case "attendance.mark": {
+      if (!moduleEnabled(d.company, "turmas")) return fail(MODULE_OFF);
+      const cls = d.classes.find((c) => c.id === a.classId);
+      if (!cls) return fail("Turma não encontrada.");
+      const teaches = cls.resourceId !== null && d.resources.some((r) => r.id === cls.resourceId && r.userId === me);
+      if (!can(roles, "turmas.matricular") && !teaches)
+        return fail("Somente a recepção ou o instrutor marcam presença.");
+      const client = visible.clients.find((c) => c.id === a.clientId);
+      if (!client) return fail("Aluno não encontrado.");
+      const existing = d.attendance.find(
+        (x) => x.classId === cls.id && x.clientId === client.id && x.classDate === a.date,
+      );
+      if (a.status === null) {
+        d.attendance = d.attendance.filter((x) => x !== existing);
+        return { ok: true, message: "Marcação removida.", id: cls.id };
+      }
+      if (existing) existing.status = a.status;
+      else
+        d.attendance.push({
+          id: ctx.newId(),
+          classId: cls.id,
+          clientId: client.id,
+          classDate: a.date,
+          status: a.status,
+        });
+      return { ok: true, message: a.status === "falta" ? "Falta marcada." : "Presença marcada.", id: cls.id };
+    }
+
+    case "company.setBooking": {
+      if (!can(roles, "empresa.gerenciar")) return fail("Somente o administrador configura o agendamento online.");
+      if (!moduleEnabled(d.company, "agendamento_online")) return fail(MODULE_OFF);
+      if (a.enabled && !a.slug) return fail("Escolha o endereço da página.", { slug: "Escolha o endereço da página." });
+      Object.assign(d.company, { bookingEnabled: a.enabled, bookingSlug: a.slug, bookingAutoConfirm: a.autoConfirm });
+      return {
+        ok: true,
+        message: a.enabled ? "Agendamento online ligado." : "Agendamento online desligado.",
       };
     }
 

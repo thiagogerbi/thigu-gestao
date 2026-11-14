@@ -26,6 +26,21 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
         ? data.appointments.filter((a) => myResources.has(a.resourceId))
         : [];
 
+  const blocks = !on("agenda")
+    ? []
+    : can(roles, "agenda.todas")
+      ? data.blocks
+      : can(roles, "agenda.propria")
+        ? data.blocks.filter((b) => myResources.has(b.resourceId))
+        : [];
+
+  // Turmas: o instrutor vê as próprias turmas e os alunos delas.
+  const classes = on("turmas") ? data.classes : [];
+  const myClasses = new Set(classes.filter((c) => c.resourceId && myResources.has(c.resourceId)).map((c) => c.id));
+  const myStudents = new Set(
+    on("turmas") ? data.enrollments.filter((e) => !e.endedOn && myClasses.has(e.classId)).map((e) => e.clientId) : [],
+  );
+
   const deals = allCrm ? data.deals : data.deals.filter((d) => d.ownerId === me);
   const dealIds = new Set(deals.map((d) => d.id));
   const clients = allClients
@@ -35,15 +50,19 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
           c.ownerId === me ||
           deals.some((d) => d.clientId === c.id) ||
           // quem atende um paciente de um colega precisa ver o nome dele na própria agenda
-          appointments.some((a) => a.clientId === c.id),
+          appointments.some((a) => a.clientId === c.id) ||
+          myStudents.has(c.id),
       );
   const clientIds = new Set(clients.map((c) => c.id));
 
   const sales = allFin || allCrm ? data.sales : data.sales.filter((s) => dealIds.has(s.dealId));
   const saleIds = new Set(sales.map((s) => s.id));
+  // recepção e caixa recebem no balcão o que o cliente deve (só nos ramos com caixa)
+  const collects = on("caixa") && (roles.includes("recepcao") || roles.includes("caixa"));
   const accounts = data.accounts.filter((a) => {
     if (allFin) return true;
     if (a.kind === "pagar") return false;
+    if (collects && ["atendimento", "pacote", "mensalidade", "caixa"].includes(a.origin)) return true;
     return can(roles, "recebiveis.ver_proprios") && a.saleId !== null && saleIds.has(a.saleId);
   });
   const accountIds = new Set(accounts.map((a) => a.id));
@@ -60,6 +79,27 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
     clinicalNotes: on("prontuario") ? data.clinicalNotes.filter((n) => n.authorId === me) : [],
     packages: on("pacotes") ? data.packages.filter((p) => clientIds.has(p.clientId)) : [],
     subscriptions: on("mensalidades") ? data.subscriptions.filter((s) => clientIds.has(s.clientId)) : [],
+    blocks,
+    products: on("caixa") ? data.products : [],
+    cashSessions: on("caixa") && can(roles, "caixa.operar") ? data.cashSessions : [],
+    cashSaleItems: data.cashSaleItems.filter((i) => accountIds.has(i.accountId)),
+    commissionRules: !on("comissoes")
+      ? []
+      : can(roles, "comissoes.ver_todas")
+        ? data.commissionRules
+        : data.commissionRules.filter((r) => r.resourceId === null || myResources.has(r.resourceId)),
+    commissionClosings: !on("comissoes")
+      ? []
+      : can(roles, "comissoes.ver_todas")
+        ? data.commissionClosings
+        : data.commissionClosings.filter((c) => myResources.has(c.resourceId)),
+    classes,
+    enrollments: on("turmas")
+      ? data.enrollments.filter((e) => clientIds.has(e.clientId) || myClasses.has(e.classId))
+      : [],
+    attendance: on("turmas")
+      ? data.attendance.filter((a) => clientIds.has(a.clientId) || myClasses.has(a.classId))
+      : [],
     deals,
     tasks: allCrm
       ? data.tasks

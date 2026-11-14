@@ -4,6 +4,7 @@ import { Button, IconButton, LinkButton } from "@/components/ui/button";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui/card";
 import { IconEdit, IconPlus } from "@/components/ui/icons";
 import { useToast } from "@/components/ui/toast";
+import { hoursSummary } from "@/lib/domain/hours";
 import { formatBRL } from "@/lib/domain/money";
 import { can } from "@/lib/domain/permissions";
 import { moduleAvailable } from "@/lib/domain/segments";
@@ -22,6 +23,7 @@ export function ServicesScreen() {
   const { exec, pending } = useAction();
   const agendaOn = moduleAvailable(data.company, "agenda");
   const servicesOn = moduleAvailable(data.company, "servicos");
+  const productsOn = moduleAvailable(data.company, "caixa") && can(me.roles, "produtos.gerenciar");
 
   if (!can(me.roles, "agenda.configurar") || (!agendaOn && !servicesOn)) {
     return (
@@ -107,6 +109,7 @@ export function ServicesScreen() {
                       <p className="text-sm text-muted">
                         {r.userId ? `Ligada a ${name(r.userId)}` : "Sem acesso ao sistema"}
                       </p>
+                      <p className="text-sm text-muted">{hoursSummary(r.workHours)}</p>
                     </div>
                     <IconButton
                       label={`Editar agenda de ${r.name}`}
@@ -151,6 +154,42 @@ export function ServicesScreen() {
                     <IconButton
                       label={`Editar ${s.name}`}
                       onClick={() => dialogs.open({ kind: "service", serviceId: s.id })}
+                    >
+                      <IconEdit />
+                    </IconButton>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        )}
+
+        {productsOn && (
+          <Card className="p-4" aria-labelledby="produtos">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 id="produtos" className="font-display text-lg font-bold">
+                Produtos
+              </h2>
+              <Button size="sm" onClick={() => dialogs.open({ kind: "product" })}>
+                <IconPlus className="h-4 w-4" /> Novo produto
+              </Button>
+            </div>
+            <p className="mb-3 text-sm text-muted">O que é vendido no balcão. Aparece na venda rápida do caixa.</p>
+            {data.products.length === 0 ? (
+              <p className="text-sm text-muted">Nenhum produto ainda.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {data.products.map((p) => (
+                  <li key={p.id} className="flex items-center justify-between gap-2 py-2.5">
+                    <div className="min-w-0">
+                      <p className="font-semibold">
+                        {p.name} {!p.active && <Badge tone="gray">desativado</Badge>}
+                      </p>
+                      <p className="text-sm tabular text-muted">{formatBRL(p.priceCents)}</p>
+                    </div>
+                    <IconButton
+                      label={`Editar ${p.name}`}
+                      onClick={() => dialogs.open({ kind: "product", productId: p.id })}
                     >
                       <IconEdit />
                     </IconButton>

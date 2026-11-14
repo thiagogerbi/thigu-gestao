@@ -25,6 +25,8 @@ const ctx = (): EngineContext => ({ now, newId: () => randomUUID(), processed: n
 
 function setup() {
   const [aurora, , clinica, pet] = buildPreviewSeed(now);
+  // estes testes são de agenda sem horário de trabalho definido (o horário tem testes próprios)
+  for (const r of [...clinica.resources, ...pet.resources]) r.workHours = {};
   const who = (d: CompanyData, userId: string) => d.members.find((m) => m.userId === userId)!;
   return {
     aurora,

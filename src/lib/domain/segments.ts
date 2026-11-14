@@ -38,13 +38,13 @@ export const MODULES: Record<ModuleId, ModuleInfo> = {
   lembretes: { label: "Lembretes pelo WhatsApp", minPlan: "essencial", built: true },
   pacotes: { label: "Pacotes de sessões", minPlan: "essencial", built: true },
   mensalidades: { label: "Mensalidades", minPlan: "essencial", built: true },
-  turmas: { label: "Turmas e presença", minPlan: "essencial", built: false },
-  caixa: { label: "Caixa do dia", minPlan: "essencial", built: false },
+  turmas: { label: "Turmas e presença", minPlan: "essencial", built: true },
+  caixa: { label: "Caixa do dia", minPlan: "essencial", built: true },
   ordem_servico: { label: "Ordem de serviço", minPlan: "essencial", built: false },
   estoque: { label: "Estoque", minPlan: "essencial", built: false },
   pedidos: { label: "Pedidos com prazo", minPlan: "essencial", built: false },
-  comissoes: { label: "Comissões", minPlan: "equipe", built: false },
-  agendamento_online: { label: "Agendamento online", minPlan: "equipe", built: false },
+  comissoes: { label: "Comissões", minPlan: "equipe", built: true },
+  agendamento_online: { label: "Agendamento online", minPlan: "equipe", built: true },
   lembrete_automatico: { label: "Lembrete automático", minPlan: "equipe", built: false },
 };
 export const MODULE_IDS = Object.keys(MODULES) as ModuleId[];

@@ -5,6 +5,9 @@ import { InlineAlert } from "@/components/ui/card";
 import { SelectField, TextField } from "@/components/ui/fields";
 import { Modal } from "@/components/ui/overlay";
 import { useToast } from "@/components/ui/toast";
+import { WorkHoursEditor } from "@/features/services/work-hours-editor";
+import { workHoursError } from "@/lib/domain/hours";
+import type { WorkHours } from "@/lib/domain/types";
 import { same } from "@/lib/utils/equality";
 import { useAction, useBackend } from "@/state/backend-context";
 import { useTerms } from "@/state/use-terms";
@@ -26,20 +29,25 @@ export function ResourceDialog({
     name: existing?.name ?? preset?.name ?? "",
     userId: existing?.userId ?? userId ?? "",
     active: existing?.active ?? true,
+    workHours: (existing?.workHours ?? {}) as WorkHours,
   };
   const [f, setF] = useState(initial);
   const formId = useId();
   // pessoas que ainda não têm agenda (ou a que já está ligada a esta)
   const free = data.members.filter((m) => m.userId === f.userId || !data.resources.some((r) => r.userId === m.userId));
 
+  const hoursError = workHoursError(f.workHours);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (hoursError) return;
     const r = await exec({
       type: "resource.save",
       id: resourceId,
       name: f.name,
       userId: f.userId || null,
       active: f.active,
+      workHours: f.workHours,
     });
     if (r.ok) {
       toast({ tone: "success", text: r.message });
@@ -52,6 +60,7 @@ export function ResourceDialog({
       open
       onClose={onClose}
       dirty={!same(f, initial)}
+      size="lg"
       title={existing ? `Editar agenda de ${existing.name}` : "Nova agenda"}
       description="O nome aparece no topo da coluna da agenda."
       footer={
@@ -98,6 +107,8 @@ export function ResourceDialog({
           autoComplete="off"
           data-autofocus
         />
+        <WorkHoursEditor value={f.workHours} onChange={(workHours) => setF((x) => ({ ...x, workHours }))} />
+        {hoursError && <InlineAlert>{hoursError}</InlineAlert>}
         {existing && (
           <label className="flex min-h-11 items-center gap-2">
             <input

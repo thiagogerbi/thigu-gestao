@@ -174,6 +174,33 @@ export const IconMoneyOut = ({ className }: P) =>
     </>,
     className,
   );
+export const IconRegister = ({ className }: P) =>
+  base(
+    <>
+      <rect x="3" y="10" width="18" height="10" rx="2" />
+      <path d="M7 10V5h10v5M7 15h2M11 15h2M15 15h2" />
+    </>,
+    className,
+  );
+export const IconPercent = ({ className }: P) =>
+  base(
+    <>
+      <path d="M19 5L5 19" />
+      <circle cx="7" cy="7" r="2.5" />
+      <circle cx="17" cy="17" r="2.5" />
+    </>,
+    className,
+  );
+export const IconGroup = ({ className }: P) =>
+  base(
+    <>
+      <circle cx="12" cy="7" r="3" />
+      <circle cx="5" cy="10" r="2.2" />
+      <circle cx="19" cy="10" r="2.2" />
+      <path d="M7 20c0-3 2.2-5 5-5s5 2 5 5M1.5 19c0-2.2 1.5-3.8 3.5-3.8M22.5 19c0-2.2-1.5-3.8-3.5-3.8" />
+    </>,
+    className,
+  );
 export const IconSpinner = ({ className = "h-4 w-4" }: P) => (
   <svg viewBox="0 0 24 24" className={`${className} animate-spin`} aria-hidden="true" focusable="false">
     <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity=".25" strokeWidth="3" fill="none" />

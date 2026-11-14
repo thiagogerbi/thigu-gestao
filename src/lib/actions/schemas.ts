@@ -105,6 +105,99 @@ export const actionSchema = z.discriminatedUnion("type", [
     name: text(80).min(1, "Digite o nome."),
     userId: id.nullable(),
     active: z.boolean(),
+    /** Sem este campo, o horário que já existe é mantido. */
+    workHours: z.record(z.string().max(1), z.array(z.tuple([z.string().max(5), z.string().max(5)])).max(4)).optional(),
+  }),
+  z.object({
+    type: z.literal("block.create"),
+    resourceId: id,
+    startsAt: instant,
+    endsAt: instant,
+    reason: text(120),
+  }),
+  z.object({ type: z.literal("block.delete"), id }),
+  z.object({
+    type: z.literal("product.save"),
+    id: id.optional(),
+    name: text(80).min(1, "Digite o nome do produto."),
+    priceCents: cents,
+    active: z.boolean(),
+  }),
+  z.object({ type: z.literal("cash.open"), openingCents: z.number().int().min(0).max(1_000_000_00) }),
+  z.object({
+    type: z.literal("cash.sale"),
+    sessionId: id,
+    clientId: id.nullable(),
+    items: z
+      .array(
+        z.object({
+          productId: id.nullable(),
+          serviceId: id.nullable(),
+          description: text(120).min(1, "Descreva o item."),
+          quantity: z.number().int().min(1).max(999),
+          unitCents: positiveCents,
+        }),
+      )
+      .min(1, "Adicione pelo menos um item.")
+      .max(30),
+    method: methodSchema,
+    requestId: z.string().uuid(),
+  }),
+  z.object({
+    type: z.literal("cash.receive"),
+    sessionId: id,
+    accountId: id,
+    amountCents: positiveCents,
+    method: methodSchema,
+    requestId: z.string().uuid(),
+  }),
+  z.object({
+    type: z.literal("cash.close"),
+    sessionId: id,
+    countedCents: z.number().int().min(0).max(10_000_000_00),
+    notes: text(500),
+  }),
+  z.object({
+    type: z.literal("commissionRule.save"),
+    id: id.optional(),
+    resourceId: id.nullable(),
+    serviceId: id.nullable(),
+    percentBp: z.number().int().min(0).max(10000).nullable(),
+    fixedCents: cents.nullable(),
+  }),
+  z.object({ type: z.literal("commissionRule.delete"), id }),
+  z.object({ type: z.literal("commission.close"), resourceId: id, month: date }),
+  z.object({
+    type: z.literal("class.save"),
+    id: id.optional(),
+    name: text(80).min(1, "Dê um nome para a turma."),
+    resourceId: id.nullable(),
+    weekdays: z.array(z.number().int().min(0).max(6)).min(1, "Escolha os dias da semana.").max(7),
+    startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Digite o horário, por exemplo 18:00."),
+    durationMin: z.number().int().min(5).max(720),
+    capacity: z.number().int().min(1, "Use pelo menos 1 vaga.").max(200),
+    active: z.boolean(),
+  }),
+  z.object({ type: z.literal("enrollment.create"), classId: id, clientId: id }),
+  z.object({ type: z.literal("enrollment.end"), id }),
+  z.object({
+    type: z.literal("attendance.mark"),
+    classId: id,
+    clientId: id,
+    date,
+    /** null apaga a marcação. */
+    status: z.enum(["presente", "falta", "reposicao"]).nullable(),
+  }),
+  z.object({
+    type: z.literal("company.setBooking"),
+    enabled: z.boolean(),
+    slug: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .regex(/^[a-z0-9]([a-z0-9-]{1,38}[a-z0-9])$/, "Use de 3 a 40 letras minúsculas, números e hífen.")
+      .nullable(),
+    autoConfirm: z.boolean(),
   }),
   z.object({
     type: z.literal("appointment.save"),

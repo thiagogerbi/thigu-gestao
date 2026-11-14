@@ -173,6 +173,18 @@ Ao criar a empresa, a pessoa escolhe o ramo (dá para trocar depois em **Minha e
 - Quem vende pacotes e cria mensalidades: administrador, gestor, recepção e financeiro. O profissional vê os pacotes dos próprios pacientes. As cobranças só aparecem para quem vê o financeiro, que também tem o botão "Cobrar pelo WhatsApp" nas mensalidades atrasadas.
 - No celular, quando há mais de 5 itens no menu, os últimos vão para "Mais".
 
+### Horário de trabalho, caixa, comissões, turmas e agendamento online
+
+Horários no fuso de Brasília (UTC−3 fixo), igual no aplicativo (`hours.ts`) e no banco.
+
+- **Horário de trabalho:** em Serviços e equipe, cada agenda ganha dias e períodos (até 4 por dia, ex.: com almoço). Fora do horário, num bloqueio ou num horário ocupado, a agenda avisa antes de marcar (`scheduleWarning`) e permite encaixar. Sem horário definido, nada é bloqueado.
+- **Bloqueios:** folga, férias, curso ou médico, de algumas horas ou dias inteiros (até 60 dias por vez). Quem marca na agenda cria e tira (`resource_blocks`).
+- **Caixa do dia** (salão, barbearia, estética, pet shop, comércio): abre com o troco, venda rápida de produtos, serviços ou item digitado (`cash_sale`), recebimento de atendimentos, pacotes e mensalidades (`cash_receive`) e totais por forma de pagamento. O financeiro ou o dono fecha conferindo o dinheiro da gaveta; esperado = troco + o que entrou em dinheiro, e a diferença fica registrada com observação (`close_cash`). Um caixa aberto por vez; repetir o pedido não duplica. A recepção e o caixa passam a ver só as contas do balcão (atendimento, pacote, mensalidade, caixa), nunca as contas a pagar.
+- **Produtos:** nome e preço, em Serviços e equipe. Sem estoque por enquanto.
+- **Comissões:** regras em porcentagem ou valor fixo; vale a mais específica (profissional + serviço › serviço › profissional › geral). A base é cada atendimento atendido no mês (a sessão de pacote vale o preço do pacote ÷ sessões). Só mês encerrado fecha, uma vez por profissional; o fechamento vira conta a pagar (`origin = 'comissao'`, categoria Salários, vence dia 5). Cada profissional vê só a própria comissão.
+- **Turmas e presença** (escolas, academias, estúdios): turma com dias, horário, duração, vagas e instrutor. A recepção matricula (o banco não deixa passar das vagas) e marca presença; o instrutor vê os alunos das próprias turmas e marca presença. Reposição de aluno de outra turma. Aviso de quem está sem vir há mais de 3 semanas.
+- **Agendamento online:** em Minha empresa, o administrador liga o link `/agendar/[endereço]`. O cliente escolhe serviço, profissional, dia e horário livre, e deixa nome e celular. Só aparece quem tem horário de trabalho. O banco confere tudo de novo (`public_book`): a partir de 30 minutos e até 60 dias, dentro do horário, sem conflito, no máximo 3 horários futuros por celular e 20 pedidos por hora por empresa; o cliente é encontrado pelo celular ou cadastrado. A página pública só chama três funções (`public_booking_info`, `public_busy`, `public_book`) e não lê nenhuma tabela. O horário entra marcado como "online" (confirmado ou não, conforme a escolha da empresa). `/agendar/exemplo` mostra o Studio Bella da prévia e não grava nada.
+
 O catálogo fica em `src/lib/domain/segments.ts` e tem um espelho no banco (`_segment_modules`, `_module_min_plan`); um teste compara os dois. Toda ação passa por quatro perguntas:
 
 | Pergunta                      | Onde é respondida                                                          |
@@ -188,7 +200,7 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 
 ## O que funciona, o que é simulado e o que está pendente
 
-### Testado automaticamente (`npm test` — 119 testes)
+### Testado automaticamente (`npm test` — 137 testes)
 
 - Regras de dinheiro, datas, divisão de parcelas, saldo e situação das contas, totais de proposta e matriz de permissões.
 - **Caso de aceitação completo** no motor da prévia **e no banco** (migrações reais rodando no PGlite):
@@ -198,6 +210,7 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 - Ramos e papéis novos, no motor da prévia **e no banco**: o catálogo do banco é igual ao do aplicativo; só o administrador troca o ramo e ninguém troca o plano; recepção e caixa cuidam dos clientes de todos e o profissional só dos próprios; nenhum dos três vê negociações, vendas ou financeiro; pets só existem com o módulo ligado, são lidos por quem vê o tutor e gravados por quem edita o tutor, nunca entre empresas; trocar de ramo não apaga os campos do ramo anterior.
 - Pacotes e mensalidades, no motor da prévia **e no banco**: venda em parcelas sem duplicar; só quem pode vende; atendido com pacote usa sessão sem gerar conta e não passa do total; desfazer devolve a sessão; pacote de outro cliente, vencido ou encerrado não entra no horário; mensalidade gera uma cobrança por mês até o mês atual, sem duplicar, e para ao ser cancelada; empresas sem o módulo não têm nada disso.
 - Agenda, no motor da prévia **e no banco**: cada profissional vê e marca só na própria agenda; quem atende um paciente do colega passa a vê-lo, mas não edita a ficha; a situação não muda direto na tabela; atendido gera a conta a receber, desfazer cancela, e com pagamento registrado não desfaz; falta cobrada vira conta; horário encerrado não se remarca; a ficha de atendimento só é lida por quem escreveu e não pode ser alterada nem apagada; empresas sem o módulo não têm agenda.
+- Horário, caixa, comissões, turmas e agendamento online, no motor da prévia **e no banco**: bloqueio só na agenda que a pessoa cuida; um caixa aberto por vez, venda e recebimento sem duplicar, esperado da gaveta certo, só financeiro ou dono fecham; recepção e caixa não veem contas a pagar; comissão pela regra mais específica, com o mês contado no horário de Brasília, fechada uma vez e só depois do mês acabar (aplicativo e banco chegam ao mesmo valor); turma não passa das vagas e o instrutor marca presença dos próprios alunos; o link público só funciona ligado, recusa horário fora do atendimento, ocupado ou muito próximo, não cria cadastro repetido e limita 3 horários por celular.
 - Convites: o vínculo só existe depois do aceite; o convite espera quem ainda não tem conta; e-mail não confirmado não vê nem aceita; recusar e cancelar não criam vínculo; só o administrador convida e cancela; quem teve o acesso removido só volta aceitando um novo convite.
 
 ### Verificado manualmente no navegador (prévia, por mim, assistente de IA)
@@ -235,9 +248,11 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 ### Pendente / próximos passos
 
 - Ramos: as telas de negociações, propostas, financeiro, tarefas e o guia da prévia ainda dizem "cliente" em todos os ramos; a troca de nome vale para o menu, a lista, a ficha, o cadastro e a visão geral.
-- Fase 2B: caixa do dia, comissões e turmas. Fase 2C: horário de trabalho, agendamento online e lembrete automático pelo WhatsApp oficial.
+- Lembrete automático pelo WhatsApp oficial: depende de conta WhatsApp Business verificada pela Meta (ver a conversa da Fase 2).
+- Caixa: sangria e reforço no meio do dia; estoque dos produtos.
+- Agendamento online: o cliente desmarcar pelo link; escolher "qualquer profissional".
 - Mensalidades: cobrança automática no cartão (hoje a cobrança é criada, mas o pagamento é registrado à mão).
-- Agenda: horário de trabalho e folgas de cada agenda; remarcar ou cancelar toda a série de uma vez; ver a semana em grade de horários; registro de quem abriu cada ficha de atendimento (hoje só o autor lê, então não há outros acessos para registrar).
+- Agenda: remarcar ou cancelar toda a série de uma vez; ver a semana em grade de horários; registro de quem abriu cada ficha de atendimento (hoje só o autor lê, então não há outros acessos para registrar).
 
 - Testes de ponta a ponta (Playwright) contra um Supabase local (`supabase start`, que exige Docker).
 - Enviar o convite por e-mail (hoje o convite existe e exige aceite, mas o administrador avisa a pessoa por conta própria).

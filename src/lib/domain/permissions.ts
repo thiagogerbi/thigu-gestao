@@ -25,7 +25,15 @@ export type Capability =
   | "agenda.propria" // ver e marcar só nas agendas ligadas à própria pessoa
   | "agenda.configurar" // cadastrar serviços e quem atende
   | "prontuario.escrever" // escrever e ler as próprias anotações de atendimento
-  | "recorrentes.vender"; // vender pacotes e criar ou cancelar mensalidades
+  | "recorrentes.vender" // vender pacotes e criar ou cancelar mensalidades
+  | "caixa.operar" // abrir o caixa, vender e receber no balcão
+  | "caixa.fechar" // fechar e conferir o caixa
+  | "produtos.gerenciar" // cadastrar produtos e preços
+  | "comissoes.ver_todas" // ver a comissão de todos (cada profissional vê a própria)
+  | "comissoes.configurar" // regras de comissão
+  | "comissoes.fechar" // fechar o mês e gerar a conta a pagar
+  | "turmas.gerenciar" // criar e editar turmas
+  | "turmas.matricular"; // matricular alunos e marcar presença (o instrutor marca nas próprias turmas)
 
 const ALL_CLIENTS: Capability[] = ["clientes.ver_todos", "clientes.editar_todos", "clientes.editar_proprios"];
 
@@ -44,6 +52,14 @@ const MATRIX: Record<Role, Capability[]> = {
     "agenda.todas",
     "agenda.configurar",
     "recorrentes.vender",
+    "caixa.operar",
+    "caixa.fechar",
+    "produtos.gerenciar",
+    "comissoes.ver_todas",
+    "comissoes.configurar",
+    "comissoes.fechar",
+    "turmas.gerenciar",
+    "turmas.matricular",
   ],
   gestor: [
     ...ALL_CLIENTS,
@@ -55,8 +71,18 @@ const MATRIX: Record<Role, Capability[]> = {
     "agenda.todas",
     "agenda.configurar",
     "recorrentes.vender",
+    "produtos.gerenciar",
+    "comissoes.ver_todas",
+    "turmas.gerenciar",
+    "turmas.matricular",
   ],
-  vendedor: ["clientes.editar_proprios", "crm.editar_proprios", "venda.fechar", "recebiveis.ver_proprios"],
+  vendedor: [
+    "clientes.editar_proprios",
+    "crm.editar_proprios",
+    "venda.fechar",
+    "recebiveis.ver_proprios",
+    "caixa.operar",
+  ],
   financeiro: [
     "clientes.ver_todos",
     "crm.ver_todos",
@@ -64,12 +90,16 @@ const MATRIX: Record<Role, Capability[]> = {
     "financeiro.ver",
     "financeiro.registrar",
     "recorrentes.vender",
+    "caixa.operar",
+    "caixa.fechar",
+    "comissoes.ver_todas",
+    "comissoes.fechar",
   ],
   // Papéis dos ramos com atendimento. O caixa do dia entra com o próximo módulo.
-  recepcao: [...ALL_CLIENTS, "agenda.todas", "recorrentes.vender"],
+  recepcao: [...ALL_CLIENTS, "agenda.todas", "recorrentes.vender", "caixa.operar", "turmas.matricular"],
   // o administrador não lê o prontuário dos outros: quem atende e também é dono acumula "profissional"
   profissional: ["clientes.editar_proprios", "agenda.propria", "prontuario.escrever"],
-  caixa: ALL_CLIENTS,
+  caixa: [...ALL_CLIENTS, "caixa.operar"],
 };
 
 export function can(roles: readonly Role[], cap: Capability): boolean {

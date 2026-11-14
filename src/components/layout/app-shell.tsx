@@ -8,8 +8,11 @@ import {
   IconCalendar,
   IconCheck,
   IconColumns,
+  IconGroup,
   IconHome,
   IconMenu,
+  IconPercent,
+  IconRegister,
   IconRepeat,
   IconUndo,
   IconUsers,
@@ -50,6 +53,22 @@ function useNavItems() {
       icon: IconRepeat,
       show: rec.enabled && (rec.canSell || rec.seesMoney),
     },
+    {
+      href: `${basePath}/turmas`,
+      label: "Turmas",
+      icon: IconGroup,
+      show:
+        moduleAvailable(data.company, "turmas") &&
+        (can(me.roles, "turmas.gerenciar") ||
+          can(me.roles, "turmas.matricular") ||
+          data.classes.some((c) => data.resources.some((r) => r.id === c.resourceId && r.userId === me.userId))),
+    },
+    {
+      href: `${basePath}/caixa`,
+      label: "Caixa",
+      icon: IconRegister,
+      show: moduleAvailable(data.company, "caixa") && can(me.roles, "caixa.operar"),
+    },
     { href: `${basePath}/negociacoes`, label: "Negociações", icon: IconColumns, show: usesCrm(me.roles) },
     { href: `${basePath}/tarefas`, label: "Tarefas", icon: IconCheck, show: true },
     {
@@ -57,6 +76,14 @@ function useNavItems() {
       label: "Financeiro",
       icon: IconWallet,
       show: can(me.roles, "financeiro.ver") || can(me.roles, "recebiveis.ver_proprios"),
+    },
+    {
+      href: `${basePath}/comissoes`,
+      label: "Comissões",
+      icon: IconPercent,
+      show:
+        moduleAvailable(data.company, "comissoes") &&
+        (can(me.roles, "comissoes.ver_todas") || data.resources.some((r) => r.userId === me.userId)),
     },
   ];
   return items.filter((i) => i.show);

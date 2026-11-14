@@ -5,11 +5,14 @@
 import { addDays, toISODate } from "@/lib/domain/dates";
 import { buildPlan } from "@/lib/domain/installments";
 import { subscriptionChargeDescription, subscriptionPeriods } from "@/lib/domain/recurring";
+import { classDates } from "@/lib/domain/classes";
+import { addMonths } from "@/lib/domain/dates";
 import {
   EMPTY_PROFILE,
   type Account,
   type Appointment,
   type Subscription,
+  type WorkHours,
   type CompanyData,
   type Deal,
   type Member,
@@ -24,7 +27,14 @@ export const PREVIEW_COMPANY_IDS = {
   horizonte: "empresa-horizonte",
   clinica: "empresa-clinica",
   pet: "empresa-pet",
+  salao: "empresa-salao",
+  pilates: "empresa-pilates",
 } as const;
+
+/** Mesmo horário em vários dias da semana (0 = domingo). */
+function weekdays(days: number[], periods: [string, string][]): WorkHours {
+  return Object.fromEntries(days.map((d) => [String(d), periods])) as WorkHours;
+}
 
 export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
   const today = toISODate(now);
@@ -542,6 +552,15 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     clinicalNotes: [],
     packages: [],
     subscriptions: [],
+    blocks: [],
+    products: [],
+    cashSessions: [],
+    cashSaleItems: [],
+    commissionRules: [],
+    commissionClosings: [],
+    classes: [],
+    enrollments: [],
+    attendance: [],
     deals,
     tasks,
     notes,
@@ -568,6 +587,15 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     clinicalNotes: [],
     packages: [],
     subscriptions: [],
+    blocks: [],
+    products: [],
+    cashSessions: [],
+    cashSaleItems: [],
+    commissionRules: [],
+    commissionClosings: [],
+    classes: [],
+    enrollments: [],
+    attendance: [],
     deals: [],
     tasks: [],
     notes: [],
@@ -580,6 +608,19 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
 
   // função (e não um objeto só) para que as empresas não compartilhem as mesmas listas
   const empty = () => ({
+    appointments: [],
+    clinicalNotes: [],
+    packages: [],
+    subscriptions: [],
+    blocks: [],
+    products: [],
+    cashSessions: [],
+    cashSaleItems: [],
+    commissionRules: [],
+    commissionClosings: [],
+    classes: [],
+    enrollments: [],
+    attendance: [],
     deals: [],
     tasks: [],
     notes: [],
@@ -634,8 +675,41 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     items: [],
     ...empty(),
     resources: [
-      { id: "r-helena", name: "Helena Prado", userId: "u-helena", active: true },
-      { id: "r-igor", name: "Igor Batista", userId: "u-igor", active: true },
+      {
+        id: "r-helena",
+        name: "Helena Prado",
+        userId: "u-helena",
+        active: true,
+        workHours: {
+          "1": [
+            ["08:00", "12:00"],
+            ["13:00", "19:00"],
+          ],
+          "2": [
+            ["08:00", "12:00"],
+            ["13:00", "19:00"],
+          ],
+          "3": [
+            ["08:00", "12:00"],
+            ["13:00", "19:00"],
+          ],
+          "4": [
+            ["08:00", "12:00"],
+            ["13:00", "19:00"],
+          ],
+          "5": [
+            ["08:00", "12:00"],
+            ["13:00", "19:00"],
+          ],
+        },
+      },
+      {
+        id: "r-igor",
+        name: "Igor Batista",
+        userId: "u-igor",
+        active: true,
+        workHours: { "2": [["09:00", "18:00"]], "4": [["09:00", "18:00"]], "6": [["09:00", "13:00"]] },
+      },
     ],
     services: [
       { id: "s-psico", name: "Sessão de psicoterapia", durationMin: 50, priceCents: 20000, active: true },
@@ -893,9 +967,21 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     ],
     ...empty(),
     resources: [
-      { id: "r-leandro", name: "Leandro Dias", userId: "u-leandro", active: true },
+      {
+        id: "r-leandro",
+        name: "Leandro Dias",
+        userId: "u-leandro",
+        active: true,
+        workHours: weekdays([1, 2, 3, 4, 5, 6], [["08:00", "17:00"]]),
+      },
       // agenda sem login: quem usa a mesa é a tosadora, que não acessa o sistema
-      { id: "r-mesa2", name: "Mesa de tosa 2", userId: null, active: true },
+      {
+        id: "r-mesa2",
+        name: "Mesa de tosa 2",
+        userId: null,
+        active: true,
+        workHours: weekdays([2, 3, 4, 5, 6], [["09:00", "18:00"]]),
+      },
     ],
     services: [
       { id: "s-banho-p", name: "Banho (porte pequeno)", durationMin: 60, priceCents: 6000, active: true },
@@ -966,5 +1052,308 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     subscriptions: [],
   };
 
-  return [aurora, horizonte, clinica, pet];
+  // ---------- Studio Bella (ramo: salão, barbearia ou estúdio) ----------
+  // caixa do dia, comissões (40% geral e 50% na barba do Tiago) e agendamento online ligado
+  const lastMonth = addMonths(`${today.slice(0, 7)}-01`, -1);
+  const slotOn = (date: string, hour: number, minute: number, durationMin: number) => {
+    const [y, m, d] = date.split("-").map(Number);
+    const start = new Date(y, m - 1, d, hour, minute, 0);
+    return { startsAt: start.toISOString(), endsAt: new Date(start.getTime() + durationMin * 60_000).toISOString() };
+  };
+  const salonPast: [string, string, string, string, number, number][] = [
+    // id, cliente, agenda, serviço, valor, dia do mês passado
+    ["sb-p1", "b-joana", "r-lucia", "s-corte-f", 9000, 4],
+    ["sb-p2", "b-carla", "r-lucia", "s-escova", 6000, 9],
+    ["sb-p3", "b-joana", "r-lucia", "s-escova", 6000, 18],
+    ["sb-p4", "b-rafael", "r-tiago", "s-corte-m", 4500, 5],
+    ["sb-p5", "b-rafael", "r-tiago", "s-barba", 3500, 5],
+    ["sb-p6", "b-marcos", "r-tiago", "s-corte-m", 4500, 12],
+    ["sb-p7", "b-marcos", "r-tiago", "s-barba", 3500, 22],
+  ];
+  const salao: CompanyData = {
+    company: {
+      ...EMPTY_PROFILE,
+      id: PREVIEW_COMPANY_IDS.salao,
+      name: "Studio Bella",
+      segment: "beleza",
+      phone: "(11) 4002-3030",
+      address: "Av. Presidente Kennedy, 2000 — São Caetano do Sul/SP",
+      brandColor: "#be185d",
+      bookingSlug: "studio-bella",
+      bookingEnabled: true,
+    },
+    members: [
+      { userId: "u-ana", name: "Ana Souza", email: "ana@studiobella.exemplo", roles: ["admin"] },
+      { userId: "u-renata", name: "Renata Lima", email: "renata@studiobella.exemplo", roles: ["recepcao"] },
+      { userId: "u-lucia", name: "Lúcia Prado", email: "lucia@studiobella.exemplo", roles: ["profissional"] },
+      { userId: "u-tiago", name: "Tiago Alves", email: "tiago@studiobella.exemplo", roles: ["profissional"] },
+      { userId: "u-bruna", name: "Bruna Reis", email: "bruna@studiobella.exemplo", roles: ["caixa"] },
+    ],
+    clients: [
+      client("b-carla", "Carla Mendonça", "", "(11) 90000-4001", "u-renata", -90, {
+        preferencias: "Alergia a amônia.",
+      }),
+      client("b-joana", "Joana Ribeiro", "joana@correio.exemplo", "(11) 90000-4002", "u-lucia", -120),
+      client("b-rafael", "Rafael Souza", "", "(11) 90000-4003", "u-tiago", -60),
+      client("b-marcos", "Marcos Lima", "", "(11) 90000-4004", "u-tiago", -45),
+    ],
+    items: [],
+    ...empty(),
+    resources: [
+      {
+        id: "r-lucia",
+        name: "Lúcia Prado",
+        userId: "u-lucia",
+        active: true,
+        workHours: weekdays([2, 3, 4, 5, 6], [["09:00", "19:00"]]),
+      },
+      {
+        id: "r-tiago",
+        name: "Tiago Alves",
+        userId: "u-tiago",
+        active: true,
+        workHours: weekdays([2, 3, 4, 5, 6], [["10:00", "20:00"]]),
+      },
+    ],
+    services: [
+      { id: "s-corte-f", name: "Corte feminino", durationMin: 60, priceCents: 9000, active: true },
+      { id: "s-escova", name: "Escova", durationMin: 45, priceCents: 6000, active: true },
+      { id: "s-corte-m", name: "Corte masculino", durationMin: 30, priceCents: 4500, active: true },
+      { id: "s-barba", name: "Barba", durationMin: 30, priceCents: 3500, active: true },
+    ],
+    products: [
+      { id: "pr-shampoo", name: "Shampoo profissional", priceCents: 4500, active: true },
+      { id: "pr-pomada", name: "Pomada modeladora", priceCents: 3800, active: true },
+    ],
+    commissionRules: [
+      { id: "cr-geral", resourceId: null, serviceId: null, percentBp: 4000, fixedCents: null },
+      { id: "cr-tiago-barba", resourceId: "r-tiago", serviceId: "s-barba", percentBp: 5000, fixedCents: null },
+    ],
+    blocks: [
+      {
+        id: "bl-tiago",
+        resourceId: "r-tiago",
+        ...slot(1, 12, 0, 120),
+        reason: "Curso de barbearia",
+        createdBy: "u-ana",
+      },
+    ],
+    appointments: [
+      appointment({
+        id: "sb-1",
+        clientId: "b-joana",
+        resourceId: "r-lucia",
+        serviceId: "s-corte-f",
+        priceCents: 9000,
+        ...slot(0, 10, 0, 60),
+        status: "confirmado",
+      }),
+      appointment({
+        id: "sb-2",
+        clientId: "b-carla",
+        resourceId: "r-lucia",
+        serviceId: "s-escova",
+        priceCents: 6000,
+        ...slot(0, 14, 0, 45),
+        createdBy: "u-renata",
+      }),
+      appointment({
+        id: "sb-3",
+        clientId: "b-rafael",
+        resourceId: "r-tiago",
+        serviceId: "s-corte-m",
+        priceCents: 4500,
+        ...slot(0, 11, 0, 30),
+      }),
+      appointment({
+        id: "sb-4",
+        clientId: "b-marcos",
+        resourceId: "r-tiago",
+        serviceId: "s-barba",
+        priceCents: 3500,
+        ...slot(0, 16, 0, 30),
+        source: "online",
+        notes: "Marcado pelo link por Marcos Lima",
+      }),
+      ...salonPast.map(([id, clientId, resourceId, serviceId, price, dayOfMonth]) =>
+        appointment({
+          id,
+          clientId,
+          resourceId,
+          serviceId,
+          priceCents: price,
+          ...slotOn(addDays(lastMonth, dayOfMonth - 1), 15, 0, 30),
+          status: "compareceu",
+          accountId: `a-${id}`,
+        }),
+      ),
+    ],
+    // atendimentos do mês passado: cobrados e pagos no Pix
+    accounts: salonPast.map(([id, clientId, , serviceId, price, dayOfMonth]) =>
+      receivable({
+        id: `a-${id}`,
+        clientId,
+        description:
+          serviceId === "s-barba"
+            ? "Barba"
+            : serviceId === "s-escova"
+              ? "Escova"
+              : serviceId === "s-corte-m"
+                ? "Corte masculino"
+                : "Corte feminino",
+        origin: "atendimento",
+        amountCents: price,
+        dueDate: addDays(lastMonth, dayOfMonth - 1),
+        createdAt: at(-30),
+      }),
+    ),
+    movements: salonPast.map(([id, , , , price, dayOfMonth]) => ({
+      id: `m-${id}`,
+      accountId: `a-${id}`,
+      direction: "entrada" as const,
+      amountCents: price,
+      paidOn: addDays(lastMonth, dayOfMonth - 1),
+      method: "pix" as const,
+      registeredBy: "u-renata",
+      createdAt: at(-30),
+      undoneAt: null,
+      undoneBy: null,
+      undoReason: null,
+    })),
+  };
+
+  // ---------- Equilíbrio Pilates (ramo: aulas e turmas) ----------
+  const students: [string, string][] = [
+    ["al-1", "Aline Duarte"],
+    ["al-2", "Bruno Teixeira"],
+    ["al-3", "Cecília Andrade"],
+    ["al-4", "Davi Moreira"],
+    ["al-5", "Elisa Fontes"],
+    ["al-6", "Fábio Nogueira"],
+  ];
+  const pilatesClasses = [
+    {
+      id: "tu-ini",
+      name: "Pilates iniciante",
+      resourceId: "r-diego",
+      weekdays: [1, 3],
+      startTime: "18:00",
+      durationMin: 60,
+      capacity: 6,
+      active: true,
+    },
+    {
+      id: "tu-av",
+      name: "Pilates avançado",
+      resourceId: "r-diego",
+      weekdays: [2, 4],
+      startTime: "07:00",
+      durationMin: 60,
+      capacity: 5,
+      active: true,
+    },
+  ];
+  const pilatesEnroll = [
+    { id: "mt-1", classId: "tu-ini", clientId: "al-1", startedOn: day(-60), endedOn: null },
+    { id: "mt-2", classId: "tu-ini", clientId: "al-2", startedOn: day(-60), endedOn: null },
+    { id: "mt-3", classId: "tu-ini", clientId: "al-3", startedOn: day(-60), endedOn: null },
+    { id: "mt-4", classId: "tu-ini", clientId: "al-4", startedOn: day(-40), endedOn: null },
+    { id: "mt-5", classId: "tu-av", clientId: "al-5", startedOn: day(-45), endedOn: null },
+    { id: "mt-6", classId: "tu-av", clientId: "al-6", startedOn: day(-45), endedOn: null },
+  ];
+  // presença das últimas 3 semanas; a Cecília (al-3) parou de vir e o Davi faltou uma vez
+  const pilatesAttendance = pilatesClasses.flatMap((c) =>
+    classDates(c, day(-21), day(-1)).flatMap((date) =>
+      pilatesEnroll
+        .filter((e) => e.classId === c.id && e.clientId !== "al-3")
+        .map((e, i) => ({
+          id: `pr-${c.id}-${e.clientId}-${date}`,
+          classId: c.id,
+          clientId: e.clientId,
+          classDate: date,
+          status: (e.clientId === "al-4" && i === 3 && date === classDates(c, day(-21), day(-1))[0]
+            ? "falta"
+            : "presente") as "falta" | "presente",
+        })),
+    ),
+  );
+  const pilatesPlans: Subscription[] = students.map(([clientId], i) => ({
+    id: `sub-${clientId}`,
+    clientId,
+    name: clientId === "al-5" || clientId === "al-6" ? "Pilates avançado 2x por semana" : "Pilates 2x por semana",
+    amountCents: 28000,
+    dayOfMonth: 5,
+    startsOn: day(-60 + i),
+    endsOn: null,
+    canceledAt: null,
+    createdAt: at(-60 + i),
+  }));
+  const pilatesCharges = pilatesPlans.flatMap((sub) =>
+    subscriptionPeriods(sub, today).map((p) =>
+      receivable({
+        id: `a-${sub.id}-${p.period}`,
+        clientId: sub.clientId,
+        description: subscriptionChargeDescription(sub.name, p.period),
+        origin: "mensalidade",
+        amountCents: sub.amountCents,
+        dueDate: p.dueDate,
+        createdAt: at(-55),
+        subscriptionId: sub.id,
+        period: p.period,
+      }),
+    ),
+  );
+  const pilates: CompanyData = {
+    company: {
+      ...EMPTY_PROFILE,
+      id: PREVIEW_COMPANY_IDS.pilates,
+      name: "Equilíbrio Pilates",
+      segment: "turmas",
+      phone: "(11) 4002-4040",
+      brandColor: "#0f766e",
+    },
+    members: [
+      { userId: "u-ana", name: "Ana Souza", email: "ana@equilibrio.exemplo", roles: ["admin"] },
+      { userId: "u-carla2", name: "Carla Nunes", email: "carla@equilibrio.exemplo", roles: ["recepcao"] },
+      { userId: "u-diego2", name: "Diego Faria", email: "diego@equilibrio.exemplo", roles: ["profissional"] },
+    ],
+    clients: students.map(([id, name], i) =>
+      client(id, name, "", `(11) 90000-50${String(i + 1).padStart(2, "0")}`, "u-carla2", -60),
+    ),
+    items: [],
+    ...empty(),
+    resources: [
+      {
+        id: "r-diego",
+        name: "Diego Faria",
+        userId: "u-diego2",
+        active: true,
+        workHours: weekdays([1, 2, 3, 4, 5], [["06:00", "21:00"]]),
+      },
+    ],
+    services: [{ id: "s-aula-exp", name: "Aula experimental", durationMin: 60, priceCents: 0, active: true }],
+    classes: pilatesClasses,
+    enrollments: pilatesEnroll,
+    attendance: pilatesAttendance,
+    subscriptions: pilatesPlans,
+    accounts: pilatesCharges,
+    // todas pagas, menos as do Fábio (al-6)
+    movements: pilatesCharges
+      .filter((a) => a.clientId !== "al-6" && a.dueDate < today)
+      .map((a) => ({
+        id: `m-${a.id}`,
+        accountId: a.id,
+        direction: "entrada" as const,
+        amountCents: a.amountCents,
+        paidOn: a.dueDate,
+        method: "cartao_credito" as const,
+        registeredBy: "u-carla2",
+        createdAt: at(-30),
+        undoneAt: null,
+        undoneBy: null,
+        undoReason: null,
+      })),
+  };
+
+  return [aurora, horizonte, clinica, pet, salao, pilates];
 }

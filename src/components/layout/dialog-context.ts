@@ -8,6 +8,14 @@ export type DialogSpec =
   | { kind: "item"; clientId: string; itemId?: string }
   | { kind: "appointment"; appointmentId?: string; clientId?: string; resourceId?: string; date?: string }
   | { kind: "noShow"; appointmentId: string }
+  | { kind: "block"; resourceId?: string; date?: string }
+  | { kind: "product"; productId?: string }
+  | { kind: "cashSale" }
+  | { kind: "cashReceive"; accountId?: string }
+  | { kind: "cashClose" }
+  | { kind: "commissionRule"; ruleId?: string; resourceId?: string }
+  | { kind: "classGroup"; classId?: string }
+  | { kind: "enroll"; classId: string }
   | { kind: "package"; clientId?: string }
   | { kind: "subscription"; clientId?: string; subscriptionId?: string }
   | { kind: "service"; serviceId?: string }

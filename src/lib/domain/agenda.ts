@@ -1,5 +1,14 @@
 import { addDays, diffDays, formatShortDateBR, isISODate, toISODate } from "@/lib/domain/dates";
-import type { Appointment, AppointmentStatus, ISODate, ISODateTime, Segment } from "@/lib/domain/types";
+import { blocksFor, withinHours } from "@/lib/domain/hours";
+import type {
+  Appointment,
+  AppointmentStatus,
+  ISODate,
+  ISODateTime,
+  ResourceBlock,
+  Segment,
+  WorkHours,
+} from "@/lib/domain/types";
 
 /**
  * Regras puras da agenda. Horários são guardados como instantes (ISO completo, UTC) e mostrados
@@ -175,3 +184,36 @@ export function statusMessage(status: AppointmentStatus, accountCreated: boolean
 }
 
 export const MODULE_OFF = "Este recurso não está disponível para o ramo ou o plano da empresa.";
+
+/**
+ * Aviso antes de marcar (a pessoa pode marcar mesmo assim, como encaixe): horário já ocupado, agenda
+ * bloqueada (folga, férias) ou fora do horário de trabalho. Devolve a mensagem, ou null quando está livre.
+ */
+export function scheduleWarning(p: {
+  resourceId: string;
+  resourceName: string;
+  workHours: WorkHours;
+  appointments: readonly Pick<Appointment, "id" | "resourceId" | "startsAt" | "endsAt" | "status">[];
+  blocks: readonly ResourceBlock[];
+  slots: readonly { startsAt: ISODateTime; endsAt: ISODateTime }[];
+  ignoreId?: string;
+}): string | null {
+  const many = p.slots.length > 1;
+  const busy = p.slots.filter(
+    (s) => conflictsFor(p.appointments, { resourceId: p.resourceId, ...s, ignoreId: p.ignoreId }).length,
+  ).length;
+  if (busy) return overlapMessage(busy, p.resourceName);
+  const blocked = p.slots.map((s) => blocksFor(p.blocks, { resourceId: p.resourceId, ...s })).filter((b) => b.length);
+  if (blocked.length) {
+    const reason = blocked[0][0].reason;
+    return many
+      ? `${p.resourceName} está com a agenda bloqueada em ${blocked.length} das datas escolhidas.`
+      : `${p.resourceName} está com a agenda bloqueada nesse período${reason ? ` (${reason})` : ""}.`;
+  }
+  const outside = p.slots.filter((s) => !withinHours(p.workHours, s.startsAt, s.endsAt)).length;
+  if (outside)
+    return many
+      ? `Fora do horário de trabalho de ${p.resourceName} em ${outside} das datas escolhidas.`
+      : `Fora do horário de trabalho de ${p.resourceName}.`;
+  return null;
+}

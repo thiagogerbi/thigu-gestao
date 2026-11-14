@@ -3,10 +3,9 @@ import { checkPlan } from "@/lib/domain/installments";
 import { formatBRL } from "@/lib/domain/money";
 import {
   addMinutes,
-  conflictsFor,
   durationMinutes,
   MODULE_OFF,
-  overlapMessage,
+  scheduleWarning,
   seriesStarts,
   slotError,
   statusMessage,
@@ -29,9 +28,11 @@ import {
   termsFor,
   type CompanyFlags,
 } from "@/lib/domain/segments";
+import { classError } from "@/lib/domain/classes";
 import { toISODate } from "@/lib/domain/dates";
+import { workHoursError } from "@/lib/domain/hours";
 import { packageError, packageView, startsOnError } from "@/lib/domain/recurring";
-import { STAGE_LABEL, type Appointment, type AppointmentStatus, type Role } from "@/lib/domain/types";
+import { STAGE_LABEL, type Appointment, type AppointmentStatus, type Role, type WorkHours } from "@/lib/domain/types";
 import type { ServerSupabase } from "@/lib/supabase/server";
 import "server-only";
 
@@ -240,7 +241,12 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
       if (!need("agenda.configurar")) return fail("Somente o administrador ou o gestor cadastram quem atende.");
       const flags = await companyFlags();
       if (!flags || !moduleEnabled(flags, "agenda")) return fail(MODULE_OFF);
-      const values = { name: a.name, user_id: a.userId, active: a.active };
+      if (a.workHours) {
+        const hoursErr = workHoursError(a.workHours);
+        if (hoursErr) return fail(hoursErr, { workHours: hoursErr });
+      }
+      const values: Record<string, unknown> = { name: a.name, user_id: a.userId, active: a.active };
+      if (a.workHours) values.work_hours = a.workHours;
       const { data, error } = a.id
         ? await sb.from("resources").update(values).eq("id", a.id).eq("company_id", companyId).select("id")
         : await sb
@@ -262,7 +268,7 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
       const t = termsFor(flags.segment);
       const { data: resource } = await sb
         .from("resources")
-        .select("id, name, user_id, active")
+        .select("id, name, user_id, active, work_hours")
         .eq("id", a.resourceId)
         .eq("company_id", companyId)
         .maybeSingle();
@@ -349,11 +355,30 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
         endsAt: x.ends_at as string,
         status: x.status as AppointmentStatus,
       }));
-      const busy = slots.filter(
-        (s) => conflictsFor(existing, { resourceId: a.resourceId, ...s, ignoreId: a.id }).length,
-      ).length;
-      if (busy && !a.allowOverlap)
-        return fail(overlapMessage(busy, resource.name), { overlap: overlapMessage(busy, resource.name) });
+      const { data: blockRows } = await sb
+        .from("resource_blocks")
+        .select("id, resource_id, starts_at, ends_at, reason, created_by")
+        .eq("company_id", companyId)
+        .eq("resource_id", a.resourceId)
+        .lt("starts_at", slots[slots.length - 1].endsAt)
+        .gt("ends_at", slots[0].startsAt);
+      const warn = scheduleWarning({
+        resourceId: a.resourceId,
+        resourceName: resource.name,
+        workHours: (resource.work_hours ?? {}) as WorkHours,
+        appointments: existing,
+        blocks: (blockRows ?? []).map((b) => ({
+          id: b.id,
+          resourceId: b.resource_id,
+          startsAt: b.starts_at,
+          endsAt: b.ends_at,
+          reason: b.reason ?? "",
+          createdBy: b.created_by,
+        })),
+        slots,
+        ignoreId: a.id,
+      });
+      if (warn && !a.allowOverlap) return fail(warn, { overlap: warn });
       if (a.id) {
         const { data, error } = await sb
           .from("appointments")
@@ -497,6 +522,285 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
         message: "Mensalidade cancelada. Não haverá novas cobranças; as que já existem continuam no financeiro.",
         id: a.id,
       };
+    }
+
+    case "block.create": {
+      const { data: resource } = await sb
+        .from("resources")
+        .select("id, name, user_id")
+        .eq("id", a.resourceId)
+        .eq("company_id", companyId)
+        .maybeSingle();
+      if (!resource || !canManageResource(roles, userId, { userId: resource.user_id }))
+        return fail("Você só pode bloquear a sua própria agenda.");
+      const ms = new Date(a.endsAt).getTime() - new Date(a.startsAt).getTime();
+      if (!(ms > 0))
+        return fail("O fim precisa ser depois do início.", { endsAt: "O fim precisa ser depois do início." });
+      if (ms > 60 * 86_400_000) return fail("Bloqueie no máximo 60 dias de cada vez.", { endsAt: "Use até 60 dias." });
+      const { data, error } = await sb
+        .from("resource_blocks")
+        .insert({
+          company_id: companyId,
+          resource_id: a.resourceId,
+          starts_at: a.startsAt,
+          ends_at: a.endsAt,
+          reason: a.reason,
+          created_by: userId,
+        })
+        .select("id")
+        .single();
+      if (error) return dbFail(error);
+      return { ok: true, message: `Agenda de ${resource.name} bloqueada.`, id: data.id };
+    }
+
+    case "block.delete": {
+      const { data, error } = await sb
+        .from("resource_blocks")
+        .delete()
+        .eq("id", a.id)
+        .eq("company_id", companyId)
+        .select("id");
+      if (error) return dbFail(error);
+      if (!data?.length) return fail("Bloqueio não encontrado.");
+      return { ok: true, message: "Bloqueio removido.", id: a.id };
+    }
+
+    case "product.save": {
+      if (!need("produtos.gerenciar")) return fail("Somente o administrador ou o gestor cadastram produtos.");
+      const values = { name: a.name, price_cents: a.priceCents, active: a.active };
+      const { data, error } = a.id
+        ? await sb.from("products").update(values).eq("id", a.id).eq("company_id", companyId).select("id")
+        : await sb
+            .from("products")
+            .insert({ ...values, company_id: companyId })
+            .select("id");
+      if (error) return dbFail(error);
+      if (!data?.length) return fail("Produto não encontrado.");
+      return { ok: true, message: a.id ? `Produto ${a.name} salvo.` : `Produto ${a.name} cadastrado.`, id: data[0].id };
+    }
+
+    case "cash.open": {
+      if (!need("caixa.operar")) return fail("Seu papel nesta empresa não permite usar o caixa.");
+      const { data, error } = await sb.rpc("open_cash", { p_company: companyId, p_opening: a.openingCents });
+      if (error) return dbFail(error);
+      return { ok: true, message: `Caixa aberto com ${formatBRL(a.openingCents)} de troco.`, id: data as string };
+    }
+
+    case "cash.sale": {
+      if (!need("caixa.operar")) return fail("Seu papel nesta empresa não permite usar o caixa.");
+      const { data, error } = await sb.rpc("cash_sale", {
+        p_session: a.sessionId,
+        p_client: a.clientId,
+        p_items: a.items.map((i) => ({
+          product_id: i.productId,
+          service_id: i.serviceId,
+          description: i.description,
+          quantity: i.quantity,
+          unit_cents: i.unitCents,
+        })),
+        p_method: a.method,
+        p_request: a.requestId,
+      });
+      if (error) return dbFail(error);
+      const total = a.items.reduce((s, i) => s + i.quantity * i.unitCents, 0);
+      return {
+        ok: true,
+        message: `Venda de ${formatBRL(total)} registrada.`,
+        id: (data as { account_id: string }).account_id,
+      };
+    }
+
+    case "cash.receive": {
+      if (!need("caixa.operar")) return fail("Seu papel nesta empresa não permite usar o caixa.");
+      const { data, error } = await sb.rpc("cash_receive", {
+        p_session: a.sessionId,
+        p_account: a.accountId,
+        p_amount: a.amountCents,
+        p_method: a.method,
+        p_request: a.requestId,
+      });
+      if (error) return dbFail(error);
+      const left = Number((data as { balance_cents?: number })?.balance_cents ?? 0);
+      return {
+        ok: true,
+        message:
+          left > 0
+            ? `Recebido ${formatBRL(a.amountCents)}. Faltam ${formatBRL(left)}.`
+            : `Recebido ${formatBRL(a.amountCents)}. Conta quitada.`,
+        id: a.accountId,
+      };
+    }
+
+    case "cash.close": {
+      if (!need("caixa.fechar")) return fail("Somente o financeiro ou o dono fecham o caixa.");
+      const { data, error } = await sb.rpc("close_cash", {
+        p_session: a.sessionId,
+        p_counted: a.countedCents,
+        p_notes: a.notes,
+      });
+      if (error) return dbFail(error);
+      const diff = Number((data as { difference_cents: number }).difference_cents);
+      return {
+        ok: true,
+        message:
+          diff === 0
+            ? "Caixa fechado. O dinheiro conferiu."
+            : diff > 0
+              ? `Caixa fechado. Sobraram ${formatBRL(diff)} na gaveta.`
+              : `Caixa fechado. Faltaram ${formatBRL(-diff)} na gaveta.`,
+        id: a.sessionId,
+      };
+    }
+
+    case "commissionRule.save": {
+      if (!need("comissoes.configurar")) return fail("Somente o administrador configura as comissões.");
+      if ((a.percentBp === null) === (a.fixedCents === null)) return fail("Escolha porcentagem ou valor fixo.");
+      const { data, error } = a.id
+        ? await sb
+            .from("commission_rules")
+            .update({ percent_bp: a.percentBp, fixed_cents: a.fixedCents })
+            .eq("id", a.id)
+            .eq("company_id", companyId)
+            .select("id")
+        : await sb
+            .from("commission_rules")
+            .insert({
+              company_id: companyId,
+              resource_id: a.resourceId,
+              service_id: a.serviceId,
+              percent_bp: a.percentBp,
+              fixed_cents: a.fixedCents,
+            })
+            .select("id");
+      if (error?.code === "23505") return fail("Já existe uma regra para esta combinação. Edite a que já existe.");
+      if (error) return dbFail(error);
+      if (!data?.length) return fail("Regra não encontrada.");
+      return { ok: true, message: a.id ? "Regra de comissão salva." : "Regra de comissão criada.", id: data[0].id };
+    }
+
+    case "commissionRule.delete": {
+      if (!need("comissoes.configurar")) return fail("Somente o administrador configura as comissões.");
+      const { data, error } = await sb
+        .from("commission_rules")
+        .delete()
+        .eq("id", a.id)
+        .eq("company_id", companyId)
+        .select("id");
+      if (error) return dbFail(error);
+      if (!data?.length) return fail("Regra não encontrada.");
+      return { ok: true, message: "Regra removida.", id: a.id };
+    }
+
+    case "commission.close": {
+      if (!need("comissoes.fechar")) return fail("Somente o financeiro ou o dono fecham comissões.");
+      const { data, error } = await sb.rpc("close_commissions", { p_resource: a.resourceId, p_month: a.month });
+      if (error) return dbFail(error);
+      const r = data as { amount_cents: number };
+      return {
+        ok: true,
+        message:
+          Number(r.amount_cents) > 0
+            ? `Comissão fechada: ${formatBRL(Number(r.amount_cents))}. A conta a pagar foi para o financeiro.`
+            : "Mês fechado, sem comissão a pagar.",
+        id: a.resourceId,
+      };
+    }
+
+    case "class.save": {
+      if (!need("turmas.gerenciar")) return fail("Somente o administrador ou o gestor criam turmas.");
+      const err = classError(a);
+      if (err) return fail(err);
+      const values = {
+        name: a.name,
+        resource_id: a.resourceId,
+        weekdays: [...new Set(a.weekdays)].sort(),
+        start_time: a.startTime,
+        duration_min: a.durationMin,
+        capacity: a.capacity,
+        active: a.active,
+      };
+      const { data, error } = a.id
+        ? await sb.from("classes").update(values).eq("id", a.id).eq("company_id", companyId).select("id")
+        : await sb
+            .from("classes")
+            .insert({ ...values, company_id: companyId })
+            .select("id");
+      if (error) return dbFail(error);
+      if (!data?.length) return fail("Turma não encontrada.");
+      return { ok: true, message: a.id ? `Turma ${a.name} salva.` : `Turma ${a.name} criada.`, id: data[0].id };
+    }
+
+    case "enrollment.create": {
+      if (!need("turmas.matricular")) return fail("Seu papel nesta empresa não permite matricular.");
+      const { data, error } = await sb
+        .from("enrollments")
+        .insert({ company_id: companyId, class_id: a.classId, client_id: a.clientId, created_by: userId })
+        .select("id")
+        .single();
+      if (error?.code === "23505") return fail("Este aluno já está nesta turma.");
+      if (error) return dbFail(error);
+      await log("Matrícula em turma", "turma", a.clientId);
+      return { ok: true, message: "Aluno matriculado.", id: data.id };
+    }
+
+    case "enrollment.end": {
+      if (!need("turmas.matricular")) return fail("Seu papel nesta empresa não permite mexer em matrículas.");
+      const { data, error } = await sb
+        .from("enrollments")
+        .update({ ended_on: toISODate(new Date()) })
+        .eq("id", a.id)
+        .eq("company_id", companyId)
+        .is("ended_on", null)
+        .select("id, client_id");
+      if (error) return dbFail(error);
+      if (!data?.length) return fail("Matrícula não encontrada.");
+      await log("Saiu da turma", "turma", data[0].client_id);
+      return { ok: true, message: "Matrícula encerrada. A vaga ficou livre.", id: a.id };
+    }
+
+    case "attendance.mark": {
+      if (a.status === null) {
+        const { error } = await sb
+          .from("attendance")
+          .delete()
+          .eq("company_id", companyId)
+          .eq("class_id", a.classId)
+          .eq("client_id", a.clientId)
+          .eq("class_date", a.date);
+        if (error) return dbFail(error);
+        return { ok: true, message: "Marcação removida.", id: a.classId };
+      }
+      const { error } = await sb.from("attendance").upsert(
+        {
+          company_id: companyId,
+          class_id: a.classId,
+          client_id: a.clientId,
+          class_date: a.date,
+          status: a.status,
+          marked_by: userId,
+          marked_at: new Date().toISOString(),
+        },
+        { onConflict: "class_id,client_id,class_date" },
+      );
+      if (error) return dbFail(error);
+      return { ok: true, message: a.status === "falta" ? "Falta marcada." : "Presença marcada.", id: a.classId };
+    }
+
+    case "company.setBooking": {
+      if (!need("empresa.gerenciar")) return fail("Somente o administrador configura o agendamento online.");
+      const flags = await companyFlags();
+      if (!flags || !moduleEnabled(flags, "agendamento_online")) return fail(MODULE_OFF);
+      if (a.enabled && !a.slug) return fail("Escolha o endereço da página.", { slug: "Escolha o endereço da página." });
+      const { data, error } = await sb
+        .from("companies")
+        .update({ booking_enabled: a.enabled, booking_slug: a.slug, booking_auto_confirm: a.autoConfirm })
+        .eq("id", companyId)
+        .select("id");
+      if (error?.code === "23505")
+        return fail("Este endereço já está em uso. Escolha outro.", { slug: "Endereço em uso." });
+      if (error) return dbFail(error);
+      if (!data?.length) return fail("Somente o administrador configura o agendamento online.");
+      return { ok: true, message: a.enabled ? "Agendamento online ligado." : "Agendamento online desligado." };
     }
 
     case "appointment.markReminded": {

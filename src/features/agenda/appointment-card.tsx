@@ -93,6 +93,11 @@ export function AppointmentCard({
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <Badge tone={STATUS_TONE[ap.status]}>{STATUS_LABEL[ap.status]}</Badge>
+          {ap.source === "online" && (
+            <Badge tone="blue" className="text-xs">
+              Marcado online
+            </Badge>
+          )}
           {ap.packageId ? (
             <span className="text-sm text-muted">{ap.consumesPackage ? "Sessão do pacote" : "Pacote"}</span>
           ) : (

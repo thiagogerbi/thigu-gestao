@@ -1406,3 +1406,391 @@ describe("pacotes e mensalidades no banco", () => {
     });
   });
 });
+
+describe("horário, caixa, comissões, turmas e agendamento online no banco", () => {
+  let S = ""; // salão da Ana
+  let recep = "";
+  let prof = "";
+  let prof2 = "";
+  let cx = "";
+  let fin = "";
+  let res = "";
+  let res2 = "";
+  let svc = "";
+  let cli = "";
+  const hours = JSON.stringify({
+    "1": [["09:00", "18:00"]],
+    "2": [["09:00", "18:00"]],
+    "3": [["09:00", "18:00"]],
+    "4": [["09:00", "18:00"]],
+    "5": [["09:00", "18:00"]],
+  });
+  const items = (cents: number, qty = 1) =>
+    JSON.stringify([{ product_id: null, service_id: null, description: "Shampoo", quantity: qty, unit_cents: cents }]);
+
+  beforeAll(async () => {
+    recep = await newUser("recep@salao.test");
+    prof = await newUser("prof@salao.test");
+    prof2 = await newUser("prof2@salao.test");
+    cx = await newUser("cx@salao.test");
+    fin = await newUser("fin@salao.test");
+    S = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Salão', 'beleza') as id"))).id;
+    await inviteAndAccept(S, U.ana, "recep@salao.test", "{recepcao}", recep);
+    await inviteAndAccept(S, U.ana, "prof@salao.test", "{profissional}", prof);
+    await inviteAndAccept(S, U.ana, "prof2@salao.test", "{profissional}", prof2);
+    await inviteAndAccept(S, U.ana, "cx@salao.test", "{caixa}", cx);
+    await inviteAndAccept(S, U.ana, "fin@salao.test", "{financeiro}", fin);
+    await as(U.ana, async () => {
+      res = (
+        await one<{ id: string }>(
+          "insert into resources (company_id, name, user_id) values ($1, 'Lúcia', $2) returning id",
+          [S, prof],
+        )
+      ).id;
+      res2 = (
+        await one<{ id: string }>(
+          "insert into resources (company_id, name, user_id) values ($1, 'Tiago', $2) returning id",
+          [S, prof2],
+        )
+      ).id;
+      svc = (
+        await one<{ id: string }>(
+          "insert into services (company_id, name, duration_min, price_cents) values ($1, 'Corte', 60, 10000) returning id",
+          [S],
+        )
+      ).id;
+      cli = (
+        await one<{ id: string }>(
+          "insert into clients (company_id, name, phone, owner_id) values ($1, 'Joana', '(11) 98888-7777', $2) returning id",
+          [S, U.ana],
+        )
+      ).id;
+    });
+  });
+
+  it("horário de trabalho: só quem configura a agenda grava; bloqueio só na agenda que a pessoa cuida", async () => {
+    await as(U.ana, () => db.query("update resources set work_hours = $1::jsonb where id = $2", [hours, res]));
+    const r = await one<{ work_hours: Record<string, unknown> }>("select work_hours from resources where id = $1", [
+      res,
+    ]);
+    expect(Object.keys(r.work_hours)).toHaveLength(5);
+    // o profissional não muda o próprio horário (quem configura é o administrador ou o gestor)
+    await as(prof, () => db.query("update resources set work_hours = '{}'::jsonb where id = $1", [res]));
+    expect(
+      Object.keys(
+        (await one<{ work_hours: object }>("select work_hours from resources where id = $1", [res])).work_hours,
+      ),
+    ).toHaveLength(5);
+
+    const block = (user: string, resource: string, from: string, to: string) =>
+      as(user, () =>
+        one<{ id: string }>(
+          "insert into resource_blocks (company_id, resource_id, starts_at, ends_at, reason, created_by) values ($1, $2, $3::timestamptz, $4::timestamptz, 'Folga', $5) returning id",
+          [S, resource, from, to, user],
+        ),
+      );
+    const own = await block(prof, res, "2026-12-01 12:00+00", "2026-12-01 15:00+00");
+    expect(own.id).toBeTruthy();
+    await expect(block(prof, res2, "2026-12-01 12:00+00", "2026-12-01 15:00+00")).rejects.toThrow(/row-level security/);
+    await block(recep, res2, "2026-12-02 12:00+00", "2026-12-02 15:00+00");
+    await expect(block(U.ana, res, "2026-12-01 00:00+00", "2027-03-01 00:00+00")).rejects.toThrow(/check constraint/);
+    // o colega não vê nem apaga o bloqueio da Lúcia
+    expect(await as(prof2, () => rows("select id from resource_blocks where id = $1", [own.id]))).toHaveLength(0);
+    await as(prof, () => db.query("delete from resource_blocks where id = $1", [own.id]));
+    expect(await rows("select id from resource_blocks where id = $1", [own.id])).toHaveLength(0);
+  });
+
+  it("caixa: abre uma vez, vende e recebe sem duplicar; o profissional não usa; só financeiro ou dono fecham", async () => {
+    await expect(as(prof, () => db.query("select public.open_cash($1, 10000)", [S]))).rejects.toThrow(
+      /não permite usar o caixa/,
+    );
+    const session = (await as(cx, () => one<{ id: string }>("select public.open_cash($1, 10000) as id", [S]))).id;
+    await expect(as(recep, () => db.query("select public.open_cash($1, 0)", [S]))).rejects.toThrow(/já está aberto/);
+
+    const req = randomUUID();
+    const sale = (user: string, method: string, json: string, request = randomUUID()) =>
+      as(user, () =>
+        one<{ r: { account_id: string; duplicate: boolean; total_cents?: number } }>(
+          "select public.cash_sale($1, $2, $3::jsonb, $4::payment_method, $5) as r",
+          [session, cli, json, method, request],
+        ),
+      );
+    const first = await sale(cx, "dinheiro", items(4500, 2), req);
+    expect(first.r).toMatchObject({ total_cents: 9000, duplicate: false });
+    expect((await sale(cx, "dinheiro", items(4500, 2), req)).r).toEqual({
+      account_id: first.r.account_id,
+      duplicate: true,
+    });
+    await sale(recep, "pix", items(3000));
+    await expect(sale(cx, "pix", items(0))).rejects.toThrow(/quantidade e valor/);
+    const acc = await one<{ origin: string; amount_cents: number }>(
+      "select origin, amount_cents from accounts where id = $1",
+      [first.r.account_id],
+    );
+    expect(acc).toMatchObject({ origin: "caixa", amount_cents: 9000 });
+    expect(await rows("select id from cash_sale_items where account_id = $1", [first.r.account_id])).toHaveLength(1);
+
+    // recebe no caixa um atendimento atendido (conta de origem atendimento)
+    const ap = (
+      await as(U.ana, () =>
+        one<{ id: string }>(
+          `insert into appointments (company_id, client_id, resource_id, service_id, starts_at, ends_at, price_cents, created_by)
+           values ($1, $2, $3, $4, now() - interval '2 hours', now() - interval '1 hour', 10000, $5) returning id`,
+          [S, cli, res, svc, U.ana],
+        ),
+      )
+    ).id;
+    const st = await as(U.ana, () =>
+      one<{ r: { account_id: string } }>("select public.set_appointment_status($1, 'compareceu', true) as r", [ap]),
+    );
+    // a recepção e o caixa enxergam a conta do atendimento para cobrar, mas não as contas a pagar
+    expect(await as(cx, () => rows("select id from accounts where id = $1", [st.r.account_id]))).toHaveLength(1);
+    expect(
+      await as(cx, () => rows("select id from accounts where kind = 'pagar' and company_id = $1", [S])),
+    ).toHaveLength(0);
+    const receive = (amount: number, request = randomUUID()) =>
+      as(cx, () =>
+        one<{ r: { duplicate: boolean; balance_cents?: number } }>(
+          "select public.cash_receive($1, $2, $3, 'dinheiro', $4) as r",
+          [session, st.r.account_id, amount, request],
+        ),
+      );
+    await expect(receive(20000)).rejects.toThrow(/passa do que falta/);
+    expect((await receive(6000)).r).toMatchObject({ duplicate: false, balance_cents: 4000 });
+
+    await expect(as(cx, () => db.query("select public.close_cash($1, 0, '')", [session]))).rejects.toThrow();
+    // esperado na gaveta: 100 de troco + 90 da venda em dinheiro + 60 recebidos em dinheiro (o Pix não conta)
+    const closed = await as(fin, () =>
+      one<{ r: { expected_cents: number; difference_cents: number } }>(
+        "select public.close_cash($1, 24500, 'faltou troco') as r",
+        [session],
+      ),
+    );
+    expect(closed.r).toEqual({ expected_cents: 25000, difference_cents: -500 });
+    await expect(
+      as(cx, () =>
+        db.query("select public.cash_sale($1, null, $2::jsonb, 'pix', $3)", [session, items(100), randomUUID()]),
+      ),
+    ).rejects.toThrow(/já foi fechado/);
+    // depois de fechado, abre de novo
+    expect((await as(cx, () => one<{ id: string }>("select public.open_cash($1, 0) as id", [S]))).id).not.toBe(session);
+  });
+
+  it("comissões: regra mais específica, só mês encerrado, uma vez; gera a conta a pagar", async () => {
+    await as(U.ana, async () => {
+      await db.query(
+        "insert into commission_rules (company_id, resource_id, service_id, percent_bp) values ($1, null, null, 4000)",
+        [S],
+      );
+      await db.query(
+        "insert into commission_rules (company_id, resource_id, service_id, percent_bp) values ($1, $2, $3, 5000)",
+        [S, res2, svc],
+      );
+    });
+    await expect(
+      as(recep, () =>
+        db.query(
+          "insert into commission_rules (company_id, resource_id, service_id, fixed_cents) values ($1, null, $2, 100)",
+          [S, svc],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security/);
+    // atendimentos de outubro (mês encerrado, horário de Brasília): 2 da Lúcia, 1 do Tiago
+    const past = async (resource: string, start: string, price: number) => {
+      const id = (
+        await as(U.ana, () =>
+          one<{ id: string }>(
+            `insert into appointments (company_id, client_id, resource_id, service_id, starts_at, ends_at, price_cents, created_by)
+             values ($1, $2, $3, $4, $5::timestamptz, $5::timestamptz + interval '1 hour', $6, $7) returning id`,
+            [S, cli, resource, svc, start, price, U.ana],
+          ),
+        )
+      ).id;
+      await as(U.ana, () => db.query("select public.set_appointment_status($1, 'compareceu', false)", [id]));
+    };
+    await past(res, "2026-10-05 13:00+00", 10000);
+    await past(res, "2026-10-31 23:30+00", 8000); // 31/10 20:30 em Brasília: conta em outubro
+    await past(res, "2026-11-01 02:30+00", 9999); // 31/10 23:30 em Brasília: também outubro
+    await past(res2, "2026-10-10 13:00+00", 10000);
+
+    await expect(as(U.ana, () => db.query("select public.close_commissions($1, '2026-11-01')", [res]))).rejects.toThrow(
+      /já terminou/,
+    );
+    await expect(as(cx, () => db.query("select public.close_commissions($1, '2026-10-01')", [res]))).rejects.toThrow();
+    const lucia = await as(fin, () =>
+      one<{ r: { appointments: number; base_cents: number; amount_cents: number; account_id: string } }>(
+        "select public.close_commissions($1, '2026-10-01') as r",
+        [res],
+      ),
+    );
+    expect(lucia.r).toMatchObject({ appointments: 3, base_cents: 27999, amount_cents: 11200 });
+    const tiago = await as(U.ana, () =>
+      one<{ r: { amount_cents: number } }>("select public.close_commissions($1, '2026-10-01') as r", [res2]),
+    );
+    expect(tiago.r.amount_cents).toBe(5000);
+    await expect(as(U.ana, () => db.query("select public.close_commissions($1, '2026-10-01')", [res]))).rejects.toThrow(
+      /já foram fechadas/,
+    );
+    const acc = await one<{ kind: string; origin: string; due_date: string; amount_cents: number }>(
+      "select kind, origin, due_date::text, amount_cents from accounts where id = $1",
+      [lucia.r.account_id],
+    );
+    expect(acc).toEqual({ kind: "pagar", origin: "comissao", due_date: "2026-11-05", amount_cents: 11200 });
+    // cada profissional vê só a própria comissão
+    expect(
+      await as(prof, () => rows("select resource_id from commission_closings where company_id = $1", [S])),
+    ).toEqual([{ resource_id: res }]);
+  });
+
+  it("agendamento online: só com o link ligado; confere horário, conflito e limite por celular", async () => {
+    await as(U.ana, () => db.query("update resources set work_hours = $1::jsonb where id = $2", [hours, res2]));
+    const anon = async <T>(fn: () => Promise<T>) => {
+      await db.exec("set role anon");
+      try {
+        return await fn();
+      } finally {
+        await db.exec("reset role");
+      }
+    };
+    expect(
+      (await anon(() => one<{ i: unknown }>("select public.public_booking_info('salao-teste') as i"))).i,
+    ).toBeNull();
+    await as(U.ana, () =>
+      db.query("update companies set booking_slug = 'salao-teste', booking_enabled = true where id = $1", [S]),
+    );
+    await expect(
+      as(recep, () => db.query("update companies set booking_enabled = false where id = $1", [S])),
+    ).resolves.toBeTruthy();
+    expect(
+      (await one<{ booking_enabled: boolean }>("select booking_enabled from companies where id = $1", [S]))
+        .booking_enabled,
+    ).toBe(true);
+
+    const info = (
+      await anon(() =>
+        one<{ i: { services: unknown[]; resources: { id: string }[] } }>(
+          "select public.public_booking_info('salao-teste') as i",
+        ),
+      )
+    ).i;
+    expect(info.services).toHaveLength(1);
+    expect(info.resources.map((r) => r.id).sort()).toEqual([res, res2].sort());
+    // o público não lê as tabelas
+    await expect(anon(() => db.query("select * from appointments"))).rejects.toThrow(/permission denied/);
+
+    // próxima segunda-feira às 10:00 em Brasília (13:00 UTC), com folga de dias para não cair a menos de 30 minutos
+    const monday = (
+      await one<{ d: string }>(
+        "select (date_trunc('week', now() + interval '7 days') + interval '13 hours')::timestamptz::text as d",
+      )
+    ).d;
+    const book = (start: string, phone = "(11) 97777-6666", request = randomUUID(), resource = res2) =>
+      anon(() =>
+        one<{ r: { appointment_id: string; status?: string; duplicate: boolean } }>(
+          "select public.public_book('salao-teste', $1, $2, $3::timestamptz, 'Carla Nova', $4, $5) as r",
+          [svc, resource, start, phone, request],
+        ),
+      );
+    const req = randomUUID();
+    const first = await book(monday, undefined, req);
+    expect(first.r).toMatchObject({ status: "agendado", duplicate: false });
+    expect((await book(monday, undefined, req)).r).toEqual({ appointment_id: first.r.appointment_id, duplicate: true });
+    await expect(book(monday, "(11) 95555-4444")).rejects.toThrow(/acabou de ser ocupado/);
+    await expect(book(monday.replace(" 13:00", " 22:00"))).rejects.toThrow(/fora do atendimento/);
+    await expect(book(new Date(Date.now() + 10 * 60_000).toISOString())).rejects.toThrow(/30 minutos/);
+
+    const ap = await one<{ source: string; client_id: string }>(
+      "select source, client_id from appointments where id = $1",
+      [first.r.appointment_id],
+    );
+    expect(ap.source).toBe("online");
+    const client = await one<{ name: string; owner_id: string }>("select name, owner_id from clients where id = $1", [
+      ap.client_id,
+    ]);
+    expect(client).toEqual({ name: "Carla Nova", owner_id: prof2 });
+    // a mesma pessoa (mesmo celular) não vira outro cadastro e não marca mais que 3 horários futuros
+    await book(monday.replace(" 13:00", " 14:00"));
+    await book(monday.replace(" 13:00", " 15:00"));
+    await expect(book(monday.replace(" 13:00", " 16:00"))).rejects.toThrow(/3 horários/);
+    expect(await rows("select id from clients where company_id = $1 and name = 'Carla Nova'", [S])).toHaveLength(1);
+    // horários ocupados aparecem sem dizer de quem
+    const busy = await anon(() =>
+      rows<{ starts_at: string }>(
+        "select * from public.public_busy('salao-teste', $1, $2::timestamptz, $2::timestamptz + interval '1 day')",
+        [res2, monday],
+      ),
+    );
+    expect(busy).toHaveLength(3);
+    expect(Object.keys(busy[0]).sort()).toEqual(["ends_at", "starts_at"]);
+  });
+
+  it("turmas: vagas, presença pelo instrutor e matrícula pela recepção", async () => {
+    const P = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Pilates', 'turmas') as id")))
+      .id;
+    const instr = await newUser("instr@pilates.test");
+    const rec = await newUser("rec@pilates.test");
+    await inviteAndAccept(P, U.ana, "instr@pilates.test", "{profissional}", instr);
+    await inviteAndAccept(P, U.ana, "rec@pilates.test", "{recepcao}", rec);
+    let cls = "";
+    const students: string[] = [];
+    await as(U.ana, async () => {
+      const r = (
+        await one<{ id: string }>(
+          "insert into resources (company_id, name, user_id) values ($1, 'Diego', $2) returning id",
+          [P, instr],
+        )
+      ).id;
+      cls = (
+        await one<{ id: string }>(
+          "insert into classes (company_id, name, resource_id, weekdays, start_time, duration_min, capacity) values ($1, 'Iniciante', $2, '{1,3}', '18:00', 60, 2) returning id",
+          [P, r],
+        )
+      ).id;
+      for (const n of ["Aluna A", "Aluna B", "Aluna C"])
+        students.push(
+          (
+            await one<{ id: string }>(
+              "insert into clients (company_id, name, owner_id) values ($1, $2, $3) returning id",
+              [P, n, U.ana],
+            )
+          ).id,
+        );
+    });
+    await expect(
+      as(rec, () =>
+        db.query(
+          "insert into classes (company_id, name, weekdays, start_time, duration_min, capacity) values ($1, 'X', '{2}', '07:00', 60, 5)",
+          [P],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security/);
+    const enroll = (client: string) =>
+      as(rec, () =>
+        db.query("insert into enrollments (company_id, class_id, client_id, created_by) values ($1, $2, $3, $4)", [
+          P,
+          cls,
+          client,
+          rec,
+        ]),
+      );
+    await enroll(students[0]);
+    await enroll(students[1]);
+    await expect(enroll(students[2])).rejects.toThrow(/cheia/);
+    // o instrutor vê os alunos da turma (sem ser dono do cadastro) e marca presença
+    expect(await as(instr, () => rows("select id from clients where company_id = $1", [P]))).toHaveLength(2);
+    await as(instr, () =>
+      db.query(
+        "insert into attendance (company_id, class_id, client_id, class_date, status, marked_by) values ($1, $2, $3, '2026-11-09', 'presente', $4)",
+        [P, cls, students[0], instr],
+      ),
+    );
+    await expect(
+      as(instr, () =>
+        db.query(
+          "insert into attendance (company_id, class_id, client_id, class_date, status, marked_by) values ($1, $2, $3, '2026-11-09', 'falta', $4)",
+          [P, cls, students[0], instr],
+        ),
+      ),
+    ).rejects.toThrow(/duplicate key|unique/);
+  });
+});

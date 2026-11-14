@@ -4,7 +4,15 @@ import { DialogContext, type DialogProps, type DialogSpec } from "@/components/l
 import { ClientDialog } from "@/features/clients/client-dialog";
 import { ItemDialog } from "@/features/clients/item-dialog";
 import { AppointmentDialog } from "@/features/agenda/appointment-dialog";
+import { BlockDialog } from "@/features/agenda/block-dialog";
 import { NoShowDialog } from "@/features/agenda/no-show-dialog";
+import { CashCloseDialog } from "@/features/cash/cash-close-dialog";
+import { CashReceiveDialog } from "@/features/cash/cash-receive-dialog";
+import { CashSaleDialog } from "@/features/cash/cash-sale-dialog";
+import { ClassDialog } from "@/features/classes/class-dialog";
+import { EnrollDialog } from "@/features/classes/enroll-dialog";
+import { CommissionRuleDialog } from "@/features/commissions/commission-rule-dialog";
+import { ProductDialog } from "@/features/services/product-dialog";
 import { PackageDialog } from "@/features/recurring/package-dialog";
 import { SubscriptionDialog } from "@/features/recurring/subscription-dialog";
 import { ResourceDialog } from "@/features/services/resource-dialog";
@@ -42,6 +50,22 @@ function renderDialog(spec: DialogSpec, props: DialogProps) {
       );
     case "noShow":
       return <NoShowDialog {...props} appointmentId={spec.appointmentId} />;
+    case "block":
+      return <BlockDialog {...props} resourceId={spec.resourceId} date={spec.date} />;
+    case "product":
+      return <ProductDialog {...props} productId={spec.productId} />;
+    case "cashSale":
+      return <CashSaleDialog {...props} />;
+    case "cashReceive":
+      return <CashReceiveDialog {...props} accountId={spec.accountId} />;
+    case "cashClose":
+      return <CashCloseDialog {...props} />;
+    case "commissionRule":
+      return <CommissionRuleDialog {...props} ruleId={spec.ruleId} resourceId={spec.resourceId} />;
+    case "classGroup":
+      return <ClassDialog {...props} classId={spec.classId} />;
+    case "enroll":
+      return <EnrollDialog {...props} classId={spec.classId} />;
     case "package":
       return <PackageDialog {...props} clientId={spec.clientId} />;
     case "subscription":

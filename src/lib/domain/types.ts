@@ -64,6 +64,11 @@ export interface CompanyProfile extends Company {
   plan: Plan;
   /** Módulos ligados à parte, além dos que o ramo já traz. Só o Thigu altera. */
   extraModules: ModuleId[];
+  /** Endereço da página pública de agendamento (/agendar/<endereço>). */
+  bookingSlug: string | null;
+  bookingEnabled: boolean;
+  /** Horário marcado pelo link já entra confirmado. */
+  bookingAutoConfirm: boolean;
 }
 
 export const EMPTY_PROFILE: Omit<CompanyProfile, "id" | "name"> = {
@@ -79,6 +84,9 @@ export const EMPTY_PROFILE: Omit<CompanyProfile, "id" | "name"> = {
   segment: "geral",
   plan: "empresa",
   extraModules: [],
+  bookingSlug: null,
+  bookingEnabled: false,
+  bookingAutoConfirm: false,
 };
 
 export interface Member {
@@ -136,6 +144,104 @@ export interface Resource {
   /** Pessoa da equipe ligada a esta agenda. O profissional vê e marca só nas agendas ligadas a ele. */
   userId: string | null;
   active: boolean;
+  /** Horário de trabalho por dia da semana ("0" = domingo). Vazio = sem horário definido. */
+  workHours: WorkHours;
+}
+
+/** {"1": [["09:00","12:00"],["13:00","18:00"]]}: períodos de trabalho de cada dia da semana. */
+export type WorkHours = Partial<Record<"0" | "1" | "2" | "3" | "4" | "5" | "6", [string, string][]>>;
+
+/** Folga, férias ou compromisso: período em que a agenda não recebe horários. */
+export interface ResourceBlock {
+  id: string;
+  resourceId: string;
+  startsAt: ISODateTime;
+  endsAt: ISODateTime;
+  reason: string;
+  createdBy: string;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  priceCents: number;
+  active: boolean;
+}
+
+/** Caixa do dia: abre com o troco, recebe e vende, e fecha comparando o esperado com o contado. */
+export interface CashSession {
+  id: string;
+  openedBy: string;
+  openedAt: ISODateTime;
+  openingCents: number;
+  closedBy: string | null;
+  closedAt: ISODateTime | null;
+  expectedCents: number | null;
+  countedCents: number | null;
+  notes: string;
+}
+
+export interface CashSaleItem {
+  id: string;
+  accountId: string;
+  productId: string | null;
+  serviceId: string | null;
+  description: string;
+  quantity: number;
+  unitCents: number;
+}
+
+/** Regra de comissão: porcentagem (centésimos: 4000 = 40%) ou valor fixo, por profissional e/ou serviço. */
+export interface CommissionRule {
+  id: string;
+  resourceId: string | null;
+  serviceId: string | null;
+  percentBp: number | null;
+  fixedCents: number | null;
+}
+
+export interface CommissionClosing {
+  id: string;
+  resourceId: string;
+  /** Primeiro dia do mês. */
+  month: ISODate;
+  appointments: number;
+  baseCents: number;
+  amountCents: number;
+  accountId: string | null;
+  closedAt: ISODateTime;
+}
+
+/** Turma com horário fixo (pilates, yoga, aulas). */
+export interface ClassGroup {
+  id: string;
+  name: string;
+  /** Agenda do instrutor. */
+  resourceId: string | null;
+  /** 0 = domingo … 6 = sábado. */
+  weekdays: number[];
+  startTime: string;
+  durationMin: number;
+  capacity: number;
+  active: boolean;
+}
+
+export interface Enrollment {
+  id: string;
+  classId: string;
+  clientId: string;
+  startedOn: ISODate;
+  endedOn: ISODate | null;
+}
+
+export type AttendanceStatus = "presente" | "falta" | "reposicao";
+
+export interface Attendance {
+  id: string;
+  classId: string;
+  clientId: string;
+  classDate: ISODate;
+  status: AttendanceStatus;
 }
 
 export interface Service {
@@ -170,6 +276,8 @@ export interface Appointment {
   packageId: string | null;
   /** O atendimento (ou a falta cobrada) usou uma sessão do pacote. */
   consumesPackage: boolean;
+  /** Quem marcou: a equipe, ou o próprio cliente pelo link. */
+  source?: "equipe" | "online";
   createdBy: string;
   createdAt: ISODateTime;
 }
@@ -274,7 +382,8 @@ export interface Sale {
 }
 
 export type AccountKind = "receber" | "pagar";
-export type AccountOrigin = "venda" | "despesa" | "avulsa" | "atendimento" | "pacote" | "mensalidade";
+export type AccountOrigin =
+  "venda" | "despesa" | "avulsa" | "atendimento" | "pacote" | "mensalidade" | "caixa" | "comissao";
 
 export interface Account {
   id: string;
@@ -343,6 +452,8 @@ export interface Movement {
   undoneAt: ISODateTime | null;
   undoneBy: string | null;
   undoReason: string | null;
+  /** Recebido no caixa do dia. */
+  cashSessionId?: string | null;
 }
 
 export interface Activity {
@@ -367,6 +478,15 @@ export interface CompanyData {
   clinicalNotes: ClinicalNote[];
   packages: Package[];
   subscriptions: Subscription[];
+  blocks: ResourceBlock[];
+  products: Product[];
+  cashSessions: CashSession[];
+  cashSaleItems: CashSaleItem[];
+  commissionRules: CommissionRule[];
+  commissionClosings: CommissionClosing[];
+  classes: ClassGroup[];
+  enrollments: Enrollment[];
+  attendance: Attendance[];
   deals: Deal[];
   tasks: Task[];
   notes: Note[];

@@ -3,13 +3,17 @@ import { useDialogs } from "@/components/layout/dialog-context";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Card, EmptyState, PageHeader } from "@/components/ui/card";
 import { TextField } from "@/components/ui/fields";
-import { IconPlus } from "@/components/ui/icons";
+import { IconClock, IconPlus, IconX } from "@/components/ui/icons";
+import { useToast } from "@/components/ui/toast";
 import { cx } from "@/components/ui/styles";
 import { AppointmentCard } from "@/features/agenda/appointment-card";
 import { RemindersPanel } from "@/features/agenda/reminders-panel";
+import { fromLocal, localParts } from "@/lib/domain/agenda";
 import { addDays, isISODate } from "@/lib/domain/dates";
+import { blocksFor, hasHours } from "@/lib/domain/hours";
+import type { Resource, ResourceBlock } from "@/lib/domain/types";
 import { can } from "@/lib/domain/permissions";
-import { useBackend } from "@/state/backend-context";
+import { useAction, useBackend } from "@/state/backend-context";
 import { useAgenda } from "@/state/use-agenda";
 import { useNav } from "@/state/use-nav";
 
@@ -34,6 +38,59 @@ function longDate(iso: string) {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
   return `${WEEKDAYS[dt.getDay()]}, ${d} de ${MONTHS[m - 1]}`;
+}
+
+const weekdayOf = (iso: string) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).getDay();
+};
+
+/** "Atende 08:00–12:00 e 13:00–19:00" ou "Não atende neste dia" (só quando a agenda tem horário definido). */
+function hoursOfDay(r: Resource, day: string): string | null {
+  if (!hasHours(r.workHours)) return null;
+  const list = r.workHours[String(weekdayOf(day)) as keyof Resource["workHours"]] ?? [];
+  return list.length ? `Atende ${list.map(([a, b]) => `${a}–${b}`).join(" e ")}` : "Não atende neste dia";
+}
+
+/** Bloqueios que pegam o dia, com o trecho daquele dia ("Dia todo" ou "12:00–14:00"). */
+function blocksOnDay(blocks: readonly ResourceBlock[], resourceId: string, day: string) {
+  const startsAt = fromLocal(day, "00:00");
+  const endsAt = fromLocal(addDays(day, 1), "00:00");
+  return blocksFor(blocks, { resourceId, startsAt, endsAt }).map((b) => {
+    const whole = new Date(b.startsAt) <= new Date(startsAt) && new Date(b.endsAt) >= new Date(endsAt);
+    const from = new Date(b.startsAt) <= new Date(startsAt) ? "00:00" : localParts(b.startsAt).time;
+    const to = new Date(b.endsAt) >= new Date(endsAt) ? "00:00" : localParts(b.endsAt).time;
+    return { block: b, label: whole ? "Dia todo" : `${from}–${to}` };
+  });
+}
+
+/** Faixa de um bloqueio, com botão de tirar para quem cuida da agenda. */
+function BlockRow({ label, block, canRemove }: { label: string; block: ResourceBlock; canRemove: boolean }) {
+  const { exec, pending } = useAction();
+  const toast = useToast();
+  return (
+    <li className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-[#c5cfdf] bg-canvas px-3 py-1.5 text-sm">
+      <span>
+        <span className="font-semibold">Bloqueado · {label}</span>
+        {block.reason && <span className="text-muted"> · {block.reason}</span>}
+      </span>
+      {canRemove && (
+        <button
+          type="button"
+          disabled={pending}
+          aria-label={`Tirar o bloqueio ${label}`}
+          title="Tirar o bloqueio"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted hover:bg-white hover:text-ink"
+          onClick={async () => {
+            const r = await exec({ type: "block.delete", id: block.id });
+            toast({ tone: r.ok ? "success" : "error", text: r.message });
+          }}
+        >
+          <IconX className="h-4 w-4" />
+        </button>
+      )}
+    </li>
+  );
 }
 
 /**
@@ -73,6 +130,7 @@ export function AgendaScreen() {
   const shown = (resourceId: string) => columns.some((c) => c.id === resourceId);
   const dayList = ag.onDay(day).filter((a) => shown(a.resourceId));
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(day, i));
+  const dayBlocks = (resourceId: string) => blocksOnDay(data.blocks, resourceId, day);
   const goTo = (d: string | null) => nav.setQuery({ dia: d === today ? null : d });
 
   return (
@@ -184,6 +242,20 @@ export function AgendaScreen() {
                         {list.filter((a) => a.status !== "cancelado").length === 1 ? "horário" : "horários"}
                       </span>
                     </h2>
+                    {columns.some((r) => blocksOnDay(data.blocks, r.id, d).length > 0) && (
+                      <ul className="mb-2 grid gap-1 md:grid-cols-2 xl:grid-cols-3">
+                        {columns.flatMap((r) =>
+                          blocksOnDay(data.blocks, r.id, d).map((b) => (
+                            <BlockRow
+                              key={b.block.id}
+                              block={b.block}
+                              label={columns.length > 1 ? `${r.name}, ${b.label.toLowerCase()}` : b.label}
+                              canRemove={ag.manageable.some((m) => m.id === r.id)}
+                            />
+                          )),
+                        )}
+                      </ul>
+                    )}
                     {list.length === 0 ? (
                       <p className="text-sm text-muted">Livre.</p>
                     ) : (
@@ -221,8 +293,22 @@ export function AgendaScreen() {
                         {active} {active === 1 ? "horário" : "horários"}
                       </span>
                     </div>
+                    {hoursOfDay(r, day) && (
+                      <p className="mb-2 flex items-center gap-1 text-sm text-muted">
+                        <IconClock className="h-3.5 w-3.5" /> {hoursOfDay(r, day)}
+                      </p>
+                    )}
+                    {dayBlocks(r.id).length > 0 && (
+                      <ul className="mb-2 grid gap-1">
+                        {dayBlocks(r.id).map((b) => (
+                          <BlockRow key={b.block.id} block={b.block} label={b.label} canRemove={mine} />
+                        ))}
+                      </ul>
+                    )}
                     {list.length === 0 ? (
-                      <p className="py-4 text-center text-sm text-muted">Livre o dia todo.</p>
+                      hoursOfDay(r, day) !== "Não atende neste dia" && (
+                        <p className="py-4 text-center text-sm text-muted">Livre o dia todo.</p>
+                      )
                     ) : (
                       <ul className="grid gap-2">
                         {list.map((a) => (
@@ -238,6 +324,16 @@ export function AgendaScreen() {
                         onClick={() => dialogs.open({ kind: "appointment", date: day, resourceId: r.id })}
                       >
                         <IconPlus className="h-4 w-4" /> Marcar com {r.name.split(" ")[0]}
+                      </Button>
+                    )}
+                    {mine && r.active && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="w-full text-muted"
+                        onClick={() => dialogs.open({ kind: "block", date: day, resourceId: r.id })}
+                      >
+                        Bloquear horário
                       </Button>
                     )}
                   </Card>

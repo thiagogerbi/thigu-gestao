@@ -4,6 +4,7 @@ import { Badge, Card, InlineAlert, PageHeader } from "@/components/ui/card";
 import { CompanyLetterhead } from "@/features/company/company-letterhead";
 import { CompanyProfileForm } from "@/features/company/company-profile-form";
 import { CompanySegmentCard } from "@/features/company/company-segment-card";
+import { OnlineBookingCard } from "@/features/company/online-booking-card";
 import { rolesFor, type Terms } from "@/lib/domain/segments";
 import type { Role } from "@/lib/domain/types";
 import { useBackend, useCan } from "@/state/backend-context";
@@ -54,6 +55,7 @@ export function CompanyScreen({ manager }: { manager?: React.ReactNode }) {
         </Card>
       )}
       <CompanySegmentCard />
+      <OnlineBookingCard />
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <Card className="p-4">
           <h2 className="mb-3 font-display text-lg font-bold">Membros</h2>
