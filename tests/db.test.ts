@@ -360,9 +360,10 @@ describe("caso de aceitação no banco", () => {
       expect(sent.r.task_id).toBeTruthy();
       await db.query("select public.proposal_accept($1, true)", [pid]);
       expect((await one<{ v: number }>("select value_cents::int v from deals where id = $1", [d])).v).toBe(240000);
-      // proposta aceita não pode mais ser editada diretamente
-      const upd = await db.query("update proposals set discount_cents = 0 where id = $1", [pid]);
-      expect(upd.affectedRows ?? 0).toBe(0);
+      // proposta não é editada diretamente na tabela (só pelas funções)
+      await expect(db.query("update proposals set discount_cents = 0 where id = $1", [pid])).rejects.toThrow(
+        /permission denied/i,
+      );
     });
   });
   it("dados da empresa: só o administrador altera, e só as colunas permitidas", async () => {
@@ -394,5 +395,147 @@ describe("caso de aceitação no banco", () => {
       [A],
     );
     expect(co).toMatchObject({ name: "Aurora Estúdio", legal_name: "Aurora Ltda.", brand_color: "#0f766e" });
+  });
+});
+
+// Brechas fechadas em 20261114000003_security_fixes.sql. Todas valiam para quem chama o banco
+// direto com a própria sessão, sem passar pela interface.
+describe("correções de permissão", () => {
+  const newClientAndDeal = (owner: string, clientOwner = owner) =>
+    as(U.ana, async () => {
+      const c = (
+        await one<{ id: string }>(
+          "insert into clients (company_id, name, email, phone, owner_id) values ($1, 'Cliente', 'cliente@exemplo.test', '11999990000', $2) returning id",
+          [A, clientOwner],
+        )
+      ).id;
+      const d = (
+        await one<{ id: string }>(
+          "insert into deals (company_id, client_id, title, value_cents, owner_id) values ($1, $2, 'Projeto', 150000, $3) returning id",
+          [A, c, owner],
+        )
+      ).id;
+      return { c, d };
+    });
+
+  it("ninguém recebe o convite de outra pessoa trocando o e-mail do próprio perfil", async () => {
+    const intruso = randomUUID();
+    await db.query("insert into auth.users (id, email, raw_user_meta_data) values ($1, 'intruso@exemplo.test', '{}')", [
+      intruso,
+    ]);
+    await as(intruso, async () => {
+      await expect(
+        db.query("update profiles set email = 'carla@aurora.test' where user_id = $1", [intruso]),
+      ).rejects.toThrow(/permission denied/i);
+      // o próprio nome continua editável
+      await db.query("update profiles set full_name = 'Intruso' where user_id = $1", [intruso]);
+    });
+    await as(U.ana, async () => {
+      await expect(
+        db.query("select public.add_member_by_email($1, 'carla@aurora.test', array['financeiro']::app_role[])", [A]),
+      ).rejects.toThrow(/Não encontramos uma conta/);
+    });
+    expect(await rows("select 1 from memberships where user_id = $1", [intruso])).toHaveLength(0);
+
+    // troca de e-mail feita pelo Auth chega ao perfil, e o convite passa a valer para o novo e-mail
+    await db.query("update auth.users set email = 'novo@exemplo.test' where id = $1", [intruso]);
+    expect((await one<{ email: string }>("select email from profiles where user_id = $1", [intruso])).email).toBe(
+      "novo@exemplo.test",
+    );
+    await as(U.ana, () =>
+      db.query("select public.add_member_by_email($1, 'NOVO@exemplo.test', array['vendedor']::app_role[])", [A]),
+    );
+    expect(await rows("select 1 from memberships where company_id = $1 and user_id = $2", [A, intruso])).toHaveLength(
+      1,
+    );
+  });
+
+  it("venda não é fechada com parcela sem número, valor ou vencimento", async () => {
+    const { d } = await newClientAndDeal(U.vend);
+    const incomplete = [
+      [{ number: 1, due_date: "2026-12-01" }],
+      [{ amount_cents: 150000, due_date: "2026-12-01" }],
+      [{ number: 1, amount_cents: 150000 }],
+      [{ number: 1, amount_cents: null, due_date: "2026-12-01" }],
+      [150000],
+    ];
+    await as(U.vend, async () => {
+      for (const p of incomplete) {
+        await expect(
+          db.query("select public.close_sale($1, null, 150000, 'avista', $2::jsonb, $3)", [
+            d,
+            JSON.stringify(p),
+            randomUUID(),
+          ]),
+        ).rejects.toThrow(/número, valor e vencimento/);
+      }
+    });
+    expect(await rows("select 1 from sales where deal_id = $1", [d])).toHaveLength(0);
+  });
+
+  it("vendedor não aponta a própria negociação para um cliente que não vê", async () => {
+    const mine = await newClientAndDeal(U.vend);
+    const hidden = await newClientAndDeal(U.ana);
+    await as(U.vend, async () => {
+      expect(await rows("select 1 from clients where id = $1", [hidden.c])).toHaveLength(0);
+      await expect(db.query("update deals set client_id = $1 where id = $2", [hidden.c, mine.d])).rejects.toThrow(
+        /row-level security/i,
+      );
+      expect(await rows("select 1 from clients where id = $1", [hidden.c])).toHaveLength(0);
+    });
+    // continua editando a negociação quando só enxerga o cliente por causa dela
+    const shared = await newClientAndDeal(U.vend, U.ana);
+    await as(U.vend, async () => {
+      const upd = await db.query("update deals set title = 'Projeto revisado' where id = $1", [shared.d]);
+      expect(upd.affectedRows).toBe(1);
+    });
+  });
+
+  it("proposta e itens só são gravados pelas funções", async () => {
+    const { c, d } = await newClientAndDeal(U.vend);
+    const item = JSON.stringify([{ description: "Item", quantity: 1, unit_cents: 10000 }]);
+    await as(U.vend, async () => {
+      const pid = (
+        await one<{ id: string }>(
+          "select public.save_proposal($1, null, $2, $3, $4::jsonb, 0, '2027-01-01', '') as id",
+          [A, d, c, item],
+        )
+      ).id;
+      await expect(db.query("update proposals set discount_cents = 500000 where id = $1", [pid])).rejects.toThrow(
+        /permission denied/i,
+      );
+      await expect(
+        db.query(
+          "insert into proposals (company_id, number, client_id, deal_id, valid_until, created_by) values ($1, 999, $2, $3, '2027-01-01', $4)",
+          [A, c, d, U.vend],
+        ),
+      ).rejects.toThrow(/permission denied/i);
+      await expect(db.query("delete from proposal_items where proposal_id = $1", [pid])).rejects.toThrow(
+        /permission denied/i,
+      );
+      await expect(db.query("update proposal_items set unit_cents = 1 where proposal_id = $1", [pid])).rejects.toThrow(
+        /permission denied/i,
+      );
+      // pela função, o desconto acima do subtotal continua recusado e a edição normal funciona
+      await expect(
+        db.query("select public.save_proposal($1, $2, $3, $4, $5::jsonb, 500000, '2027-01-01', '')", [
+          A,
+          pid,
+          d,
+          c,
+          item,
+        ]),
+      ).rejects.toThrow(/desconto/);
+      await db.query("select public.save_proposal($1, $2, $3, $4, $5::jsonb, 2000, '2027-01-01', '')", [
+        A,
+        pid,
+        d,
+        c,
+        item,
+      ]);
+      expect((await one<{ v: number }>("select discount_cents::int v from proposals where id = $1", [pid])).v).toBe(
+        2000,
+      );
+    });
   });
 });
