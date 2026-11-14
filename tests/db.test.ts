@@ -5,13 +5,21 @@
  * NÃO é exercitada; testamos reenvio/idempotência e as travas FOR UPDATE ficam documentadas.
  */
 import { PGlite } from "@electric-sql/pglite";
+import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { randomUUID } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
-const db = new PGlite();
-const U = { ana: randomUUID(), vend: randomUUID(), fin: randomUUID(), outro: randomUUID() };
+const db = new PGlite({ extensions: { pgcrypto } });
+const U = {
+  ana: randomUUID(),
+  vend: randomUUID(),
+  fin: randomUUID(),
+  outro: randomUUID(),
+  equipe: randomUUID(), // equipe Thigu: gera códigos de ativação
+  novo: randomUUID(), // cliente novo, usado nos testes de ativação
+};
 let A = ""; // empresa Aurora
 let B = ""; // empresa de outro dono
 
@@ -29,6 +37,26 @@ const one = async <T = Record<string, unknown>>(sql: string, params: unknown[] =
   (await db.query<T>(sql, params)).rows[0];
 const rows = async <T = Record<string, unknown>>(sql: string, params: unknown[] = []) =>
   (await db.query<T>(sql, params)).rows;
+/** A equipe Thigu gera um código (como depois da compra) e devolve o texto que iria por e-mail. */
+async function issueCode(
+  email: string | null,
+  accessDays = 365,
+  validDays = 30,
+): Promise<{ id: string; code: string }> {
+  return (
+    await as(U.equipe, () =>
+      one<{ r: { id: string; code: string } }>(
+        "select public.generate_activation_code('Cliente de teste', $1, $2, $3) as r",
+        [email, accessDays, validDays],
+      ),
+    )
+  ).r;
+}
+
+type Redeem = { ok: boolean; company_id?: string; access_until?: string; field?: string; message?: string };
+const createCompany = (user: string, name: string, code: string) =>
+  as(user, async () => (await one<{ r: Redeem }>("select public.create_company($1, $2) as r", [name, code])).r);
+
 const plan3 = JSON.stringify([
   { number: 1, amount_cents: 50000, due_date: "2026-11-20" },
   { number: 2, amount_cents: 50000, due_date: "2026-12-20" },
@@ -56,8 +84,9 @@ beforeAll(async () => {
       JSON.stringify({ full_name: k }),
     ]);
   }
-  A = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Aurora Estúdio') as id"))).id;
-  B = (await as(U.outro, () => one<{ id: string }>("select public.create_company('Horizonte Serviços') as id"))).id;
+  await db.query("insert into public.platform_admins (user_id) values ($1)", [U.equipe]);
+  A = (await createCompany(U.ana, "Aurora Estúdio", (await issueCode("ana@exemplo.test")).code)).company_id!;
+  B = (await createCompany(U.outro, "Horizonte Serviços", (await issueCode(null)).code)).company_id!;
   await as(U.ana, async () => {
     await db.query("select public.add_member_by_email($1, 'vend@exemplo.test', array['vendedor']::app_role[])", [A]);
     await db.query("select public.add_member_by_email($1, 'fin@exemplo.test', array['financeiro']::app_role[])", [A]);
@@ -71,7 +100,7 @@ describe("caso de aceitação no banco", () => {
   let firstAccount = "";
 
   it("perfil criado automaticamente e empresa com dono administrador", async () => {
-    expect((await one<{ c: number }>("select count(*)::int c from profiles")).c).toBe(4);
+    expect((await one<{ c: number }>("select count(*)::int c from profiles")).c).toBe(Object.keys(U).length);
     const m = await one<{ roles: string }>(
       "select roles::text from memberships where company_id = $1 and user_id = $2",
       [A, U.ana],
@@ -394,5 +423,139 @@ describe("caso de aceitação no banco", () => {
       [A],
     );
     expect(co).toMatchObject({ name: "Aurora Estúdio", legal_name: "Aurora Ltda.", brand_color: "#0f766e" });
+  });
+});
+
+describe("ativação por código (empresa só existe depois da compra)", () => {
+  it("sem código válido não é possível criar empresa", async () => {
+    const r = await createCompany(U.novo, "Loja Nova", "THIGU-AAAA-BBBB-CCCC");
+    expect(r.ok).toBe(false);
+    expect(r.field).toBe("code");
+    expect(r.message).toMatch(/não encontrado/);
+    const n = await one<{ c: number }>("select count(*)::int c from companies where name = 'Loja Nova'");
+    expect(n.c).toBe(0);
+  });
+
+  it("código válido cria a empresa, com o comprador como administrador e prazo de acesso", async () => {
+    const { code } = await issueCode("novo@exemplo.test", 30);
+    // a pessoa pode digitar com espaços e minúsculas
+    const typed = code.toLowerCase().replaceAll("-", " ");
+    const r = await createCompany(U.novo, "Loja Nova", typed);
+    expect(r.ok).toBe(true);
+    const co = await one<{ access_until: string; days: number }>(
+      "select access_until::text, (access_until - public._today())::int as days from companies where id = $1",
+      [r.company_id],
+    );
+    expect(co.days).toBe(30);
+    const m = await one<{ roles: string }>(
+      "select roles::text from memberships where company_id = $1 and user_id = $2",
+      [r.company_id, U.novo],
+    );
+    expect(m.roles).toBe("{admin}");
+
+    // uso único
+    const again = await createCompany(U.novo, "Outra Loja", code);
+    expect(again.ok).toBe(false);
+    expect(again.message).toMatch(/já foi usado/);
+  });
+
+  it("o código fica preso ao e-mail do comprador", async () => {
+    const { code } = await issueCode("comprador@empresa.test");
+    const r = await createCompany(U.outro, "Empresa Errada", code);
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/c\*\*\*@empresa\.test/);
+  });
+
+  it("código vencido ou cancelado não funciona", async () => {
+    const venc = await issueCode(null);
+    await db.query("update activation_codes set valid_until = public._today() - 1 where id = $1", [venc.id]);
+    expect((await createCompany(U.vend, "X Ltda", venc.code)).message).toMatch(/venceu/);
+
+    const canc = await issueCode(null);
+    await as(U.equipe, () => db.query("select public.revoke_activation_code($1)", [canc.id]));
+    expect((await createCompany(U.vend, "X Ltda", canc.code)).message).toMatch(/cancelado/);
+  });
+
+  it("após 5 erros em 15 minutos, bloqueia novas tentativas (mesmo com código certo)", async () => {
+    const quem = randomUUID();
+    await db.query("insert into auth.users (id, email) values ($1, 'tentativas@exemplo.test')", [quem]);
+    for (let i = 0; i < 5; i++) await createCompany(quem, "Tentativa", `THIGU-ERRA-DO00-000${i}`);
+    const { code } = await issueCode(null);
+    const r = await createCompany(quem, "Tentativa", code);
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/Muitas tentativas/);
+    // as 5 tentativas erradas ficam registradas (não são desfeitas com o erro);
+    // a tentativa feita durante o bloqueio não conta de novo, para o bloqueio não se estender sem fim
+    const n = await one<{ c: number }>(
+      "select count(*)::int c from activation_attempts where user_id = $1 and not succeeded",
+      [quem],
+    );
+    expect(n.c).toBe(5);
+  });
+
+  it("só a equipe Thigu gera e enxerga códigos; o código não fica guardado", async () => {
+    await as(U.ana, async () => {
+      await expect(db.query("select public.generate_activation_code('X', null, 30)")).rejects.toThrow(/equipe Thigu/);
+      expect(await rows("select * from activation_codes")).toHaveLength(0);
+      expect(await rows("select * from platform_admins")).toHaveLength(0);
+    });
+    const { id, code } = await issueCode(null);
+    const saved = await one<{ code_hash: string; code_hint: string }>(
+      "select code_hash, code_hint from activation_codes where id = $1",
+      [id],
+    );
+    expect(saved.code_hash).not.toContain(code.replaceAll("-", ""));
+    expect(code.endsWith(saved.code_hint)).toBe(true);
+    // painel: a equipe vê a lista com o nome da empresa que usou cada código; clientes não
+    const list = await as(U.equipe, () =>
+      rows<{ company_name: string | null }>("select * from public.list_activation_codes()"),
+    );
+    expect(list.some((r) => r.company_name === "Aurora Estúdio")).toBe(true);
+    await as(U.ana, async () => {
+      await expect(db.query("select * from public.list_activation_codes()")).rejects.toThrow(/equipe Thigu/);
+    });
+    expect(code).toMatch(/^THIGU-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+  });
+
+  it("empresa vencida fica somente leitura; renovar com novo código libera de novo", async () => {
+    await db.query("update companies set access_until = public._today() - 1 where id = $1", [A]);
+    await as(U.ana, async () => {
+      // consultar continua funcionando
+      expect((await rows("select id from clients where company_id = $1", [A])).length).toBeGreaterThan(0);
+      // registrar algo novo é bloqueado, inclusive dentro das funções do sistema
+      await expect(
+        db.query("insert into clients (company_id, name, owner_id) values ($1, 'Bloqueado', $2)", [A, U.ana]),
+      ).rejects.toThrow(/acesso desta empresa venceu/);
+      // o cliente não consegue estender o próprio prazo editando a empresa
+      await expect(db.query("update companies set access_until = '2099-01-01' where id = $1", [A])).rejects.toThrow();
+    });
+    await as(U.fin, async () => {
+      const acc = await one<{ id: string }>(
+        "select id from accounts where company_id = $1 and kind = 'receber' and canceled_at is null limit 1",
+        [A],
+      );
+      await expect(
+        db.query("select public.register_movement($1, 100, public._today(), 'pix', $2)", [acc.id, randomUUID()]),
+      ).rejects.toThrow(/venceu/);
+    });
+
+    // só o administrador renova
+    const { code } = await issueCode(null, 365);
+    await as(U.vend, async () => {
+      await expect(db.query("select public.apply_activation_code($1, $2)", [A, code])).rejects.toThrow(/administrador/);
+    });
+    const r = await as(
+      U.ana,
+      async () => (await one<{ r: Redeem }>("select public.apply_activation_code($1, $2) as r", [A, code])).r,
+    );
+    expect(r.ok).toBe(true);
+    const days = await one<{ d: number }>(
+      "select (access_until - public._today())::int d from companies where id = $1",
+      [A],
+    );
+    expect(days.d).toBe(365);
+    await as(U.ana, () =>
+      db.query("insert into clients (company_id, name, owner_id) values ($1, 'Liberado', $2)", [A, U.ana]),
+    );
   });
 });

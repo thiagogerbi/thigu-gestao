@@ -46,7 +46,7 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
       sb
         .from("companies")
         .select(
-          "id, name, legal_name, document, phone, email, address, default_terms, logo_data_url, brand_color, menu_color",
+          "id, name, legal_name, document, phone, email, address, default_terms, logo_data_url, brand_color, menu_color, access_until",
         )
         .eq("id", companyId)
         .single(),
@@ -80,6 +80,7 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
       logoDataUrl: co.logo_data_url ?? null,
       brandColor: co.brand_color ?? null,
       menuColor: co.menu_color ?? null,
+      accessUntil: co.access_until ?? null,
     },
     members: rows(members).map((m): Member => ({
       userId: m.user_id,

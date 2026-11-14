@@ -52,8 +52,31 @@ Abra <http://localhost:3000>:
    - pelo **SQL Editor** do Supabase, colando cada arquivo de `supabase/migrations/` na ordem do nome; ou
    - pela **Supabase CLI**: `supabase link` e depois `supabase db push`.
 4. Em _Authentication › Providers_, mantenha **E-mail** ativo. Se a confirmação por e-mail estiver ligada, o usuário confirma pelo link antes de entrar.
-5. Rode `npm run dev`, acesse `/entrar`, crie a conta e cadastre a empresa. Você será o administrador.
-6. Para adicionar pessoas: cada uma cria a própria conta, e o administrador adiciona o e-mail em **Minha empresa**, escolhendo os papéis. Nenhum convite é enviado automaticamente.
+5. Rode `npm run dev`, acesse `/entrar` e crie a **sua** conta (a da equipe Thigu).
+6. Torne essa conta **equipe Thigu**, rodando uma vez no SQL Editor (troque o e-mail):
+   ```sql
+   insert into public.platform_admins (user_id)
+   select user_id from public.profiles where email = 'voce@suaempresa.com.br';
+   ```
+7. Acesse `/admin/codigos` para gerar códigos de ativação (veja abaixo). Para testar como cliente, gere um código, crie outra conta e ative uma empresa com ele.
+8. Para adicionar pessoas a uma empresa: cada uma cria a própria conta, e o administrador da empresa adiciona o e-mail em **Minha empresa**, escolhendo os papéis. Quem é adicionado assim não precisa de código.
+
+## Venda e ativação por código
+
+Só empresas que pagaram podem ser criadas. A cobrança acontece **fora do sistema** (Pix, boleto, transferência); o Thigu só controla a ativação.
+
+1. **Cliente paga.** Você confirma o pagamento.
+2. **Você gera o código** em `/admin/codigos`: nome do cliente, e-mail do comprador, tempo de acesso (1 mês, 3 meses, 6 meses, 1 ano ou outro) e prazo para ativar (padrão: 30 dias).
+3. **Você envia por e-mail.** A tela mostra o código **uma única vez** e oferece "Copiar código", "Copiar texto do e-mail" (mensagem pronta com o passo a passo) e "Abrir no meu e-mail". O sistema não envia e-mails sozinho.
+4. **O cliente ativa.** Ele cria a conta em `/entrar` com o mesmo e-mail e, em "Vamos cadastrar sua empresa", digita o nome da empresa e o código. Vira administrador, com acesso pelo período comprado.
+5. **Renovação.** Perto do vencimento (14 dias antes), o sistema mostra um aviso. O administrador clica em **Renovar com código** (no aviso ou em Minha empresa) e digita o novo código; os dias são somados ao que ainda resta.
+6. **Se vencer.** A empresa fica **somente para consulta**: dá para ver e imprimir tudo, mas não registrar nada novo até renovar. Nada é apagado.
+
+**Segurança:** o código é guardado só como hash (nem a equipe consegue recuperá-lo depois); vale uma única vez; pode ficar preso ao e-mail do comprador; expira se não for usado; e 5 tentativas erradas em 15 minutos bloqueiam novas tentativas. Tudo isso é garantido no banco (`supabase/migrations/20261114000003_activation.sql`), não só na tela. Códigos enviados por engano podem ser **cancelados** no painel enquanto não forem usados.
+
+Variáveis opcionais: `NEXT_PUBLIC_THIGU_APP_URL` (endereço usado no texto do e-mail) e `NEXT_PUBLIC_THIGU_SALES_URL` (link "fale com a gente" na tela de ativação).
+
+**Ao aplicar esta migração num banco que já tem empresas**, cada empresa existente ganha 30 dias de acesso. Ajuste depois, se precisar, com `update public.companies set access_until = 'AAAA-MM-DD' where id = '...';`.
 
 ---
 
@@ -145,7 +168,7 @@ Uma pessoa pode ter vários papéis e participar de várias empresas (seletor "M
 
 ## O que funciona, o que é simulado e o que está pendente
 
-### Testado automaticamente (`npm test` — 42 testes)
+### Testado automaticamente (`npm test` — 55 testes)
 
 - Regras de dinheiro, datas, divisão de parcelas, saldo e situação das contas, totais de proposta e matriz de permissões.
 - **Caso de aceitação completo** no motor da prévia **e no banco** (migrações reais rodando no PGlite):

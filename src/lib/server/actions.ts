@@ -1,6 +1,8 @@
 "use server";
 
 import { parseAction, type ActionResult } from "@/lib/actions/schemas";
+import { canonicalCode, codeFormatError } from "@/lib/domain/activation";
+import { formatDateBR } from "@/lib/domain/dates";
 import type { CompanyData, Role } from "@/lib/domain/types";
 import { COMPANY_COOKIE } from "@/lib/server/constants";
 import { executeAction } from "@/lib/server/execute";
@@ -64,20 +66,63 @@ export async function switchCompany(companyId: string): Promise<boolean> {
   return true;
 }
 
-export async function createCompany(name: string): Promise<ActionResult> {
+/** Resposta das funções de ativação no banco (create_company / apply_activation_code). */
+type RedeemResult = { ok: boolean; company_id?: string; access_until?: string; field?: string; message?: string };
+
+function redeemFailure(r: RedeemResult): ActionResult {
+  const message = r.message ?? "Não foi possível usar este código agora.";
+  return { ok: false, message, fieldErrors: { [r.field ?? "code"]: message } };
+}
+
+/** Cadastra a empresa usando o código de ativação recebido por e-mail depois da compra. */
+export async function createCompany(name: string, code: string): Promise<ActionResult> {
   const s = await session();
   if (!s) return { ok: false, message: "Sua sessão terminou. Entre novamente." };
-  const parsed = z.string().trim().min(2, "Digite o nome da empresa (pelo menos 2 letras).").max(120).safeParse(name);
-  if (!parsed.success)
-    return {
-      ok: false,
-      message: parsed.error.issues[0].message,
-      fieldErrors: { name: parsed.error.issues[0].message },
-    };
-  const { data, error } = await s.sb.rpc("create_company", { p_name: parsed.data });
-  if (error) return { ok: false, message: "Não foi possível criar a empresa agora." };
-  await switchCompany(data as string);
-  return { ok: true, message: `Empresa ${parsed.data} criada.`, id: data as string };
+  const fieldErrors: Record<string, string> = {};
+  const parsedName = z
+    .string()
+    .trim()
+    .min(2, "Digite o nome da empresa (pelo menos 2 letras).")
+    .max(120)
+    .safeParse(name);
+  if (!parsedName.success) fieldErrors.name = parsedName.error.issues[0].message;
+  const codeError = codeFormatError(code);
+  if (codeError) fieldErrors.code = codeError;
+  if (Object.keys(fieldErrors).length) return { ok: false, message: "Confira os campos destacados.", fieldErrors };
+
+  const { data, error } = await s.sb.rpc("create_company", { p_name: parsedName.data, p_code: canonicalCode(code) });
+  if (error) {
+    console.error("[thigu] create_company", error);
+    return { ok: false, message: "Não foi possível criar a empresa agora. Tente de novo em instantes." };
+  }
+  const r = data as RedeemResult;
+  if (!r.ok) return redeemFailure(r);
+  await switchCompany(r.company_id!);
+  return { ok: true, message: `Empresa ${parsedName.data!} criada.`, id: r.company_id };
+}
+
+/** Renova o acesso da empresa com um novo código (só o administrador). */
+export async function renewAccess(companyId: string, code: string): Promise<ActionResult> {
+  const s = await session();
+  if (!s) return { ok: false, message: "Sua sessão terminou. Entre novamente." };
+  if (!uuid.safeParse(companyId).success) return { ok: false, message: "Empresa inválida." };
+  const roles = await rolesIn(s.sb, companyId, s.user.id);
+  if (!roles?.includes("admin"))
+    return { ok: false, message: "Somente o administrador da empresa pode renovar o acesso." };
+  const codeError = codeFormatError(code);
+  if (codeError) return { ok: false, message: codeError, fieldErrors: { code: codeError } };
+
+  const { data, error } = await s.sb.rpc("apply_activation_code", {
+    p_company: companyId,
+    p_code: canonicalCode(code),
+  });
+  if (error) {
+    console.error("[thigu] apply_activation_code", error);
+    return { ok: false, message: "Não foi possível renovar agora. Tente de novo em instantes." };
+  }
+  const r = data as RedeemResult;
+  if (!r.ok) return redeemFailure(r);
+  return { ok: true, message: `Acesso renovado até ${formatDateBR(r.access_until!)}.` };
 }
 
 const roleList = z.array(z.enum(["admin", "gestor", "vendedor", "financeiro"])).min(1, "Escolha pelo menos um papel.");

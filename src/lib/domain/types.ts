@@ -32,6 +32,11 @@ export interface CompanyProfile extends Company {
   brandColor: string | null;
   /** #rrggbb do menu lateral, ou null para um tom escuro automático da cor da marca. */
   menuColor: string | null;
+  /**
+   * Último dia de acesso pago (renovado com código de ativação). Depois disso a empresa fica
+   * somente leitura. null = sem prazo (prévia).
+   */
+  accessUntil: ISODate | null;
 }
 
 export const EMPTY_PROFILE: Omit<CompanyProfile, "id" | "name"> = {
@@ -44,6 +49,7 @@ export const EMPTY_PROFILE: Omit<CompanyProfile, "id" | "name"> = {
   logoDataUrl: null,
   brandColor: null,
   menuColor: null,
+  accessUntil: null,
 };
 
 export interface Member {
