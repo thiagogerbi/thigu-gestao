@@ -185,7 +185,7 @@ export interface CompanyData {
 
 export const STAGES: { id: Stage; label: string; hint: string }[] = [
   { id: "novo_contato", label: "Novo contato", hint: "Primeira conversa ainda não aconteceu" },
-  { id: "qualificacao", label: "Qualificação", hint: "Entendendo a necessidade do cliente" },
+  { id: "qualificacao", label: "Entendendo a necessidade", hint: "Descobrindo o que o cliente precisa" },
   { id: "negociacao", label: "Negociação", hint: "Conversando sobre valores e condições" },
   { id: "proposta", label: "Proposta", hint: "Proposta enviada, aguardando resposta" },
   { id: "ganha", label: "Ganha", hint: "Venda fechada" },

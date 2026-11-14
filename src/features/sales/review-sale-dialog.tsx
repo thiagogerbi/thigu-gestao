@@ -50,7 +50,7 @@ export function ReviewSaleDialog({ onClose, saleId }: DialogProps & { saleId: st
       <Modal
         open
         onClose={onClose}
-        title="Parcelas conferidas"
+        title="Parcelas confirmadas"
         footer={
           <>
             <Button variant="secondary" onClick={onClose}>
@@ -63,7 +63,7 @@ export function ReviewSaleDialog({ onClose, saleId }: DialogProps & { saleId: st
         }
       >
         <SaleSteps current={2} doneUpTo={2} />
-        <InlineAlert tone="green" title={created ?? "Esta venda já foi conferida."}>
+        <InlineAlert tone="green" title={created ?? "As parcelas desta venda já foram confirmadas."}>
           As parcelas agora aparecem em <strong>Financeiro › A receber</strong>. Quando {client?.name} pagar, use
           “Registrar recebimento”.
         </InlineAlert>
@@ -77,7 +77,7 @@ export function ReviewSaleDialog({ onClose, saleId }: DialogProps & { saleId: st
       onClose={onClose}
       dirty={mayReview && JSON.stringify(rows) !== JSON.stringify(initialRows)}
       size="lg"
-      title="Conferir parcelas da venda"
+      title="Confirmar parcelas da venda"
       description={
         <>
           {deal?.title} — <strong className="text-ink">{client?.name}</strong> — {formatBRL(sale.totalCents)}
@@ -87,7 +87,7 @@ export function ReviewSaleDialog({ onClose, saleId }: DialogProps & { saleId: st
         mayReview ? (
           <>
             <Button variant="secondary" onClick={onClose}>
-              Conferir depois
+              Confirmar depois
             </Button>
             <Button variant="money" onClick={confirm} loading={pending} disabled={!check.ok}>
               Criar {plan.length} {plan.length === 1 ? "parcela" : "parcelas"} a receber
@@ -100,7 +100,7 @@ export function ReviewSaleDialog({ onClose, saleId }: DialogProps & { saleId: st
     >
       <SaleSteps current={1} doneUpTo={1} />
       <p className="mb-4 text-sm">
-        Venda fechada por <strong>{name(sale.closedBy)}</strong> em {formatDateBR(sale.closedAt.slice(0, 10))},{" "}
+        Venda fechada por <strong>{name(sale.closedBy)}</strong> em {formatDateBR(sale.closedAt)},{" "}
         {sale.paymentMode === "avista" ? "à vista" : `em ${sale.plan.length} parcelas`}.
         {mayReview
           ? " Confira se valores e datas estão corretos. Ao confirmar, as parcelas passam a constar em contas a receber."
@@ -109,7 +109,7 @@ export function ReviewSaleDialog({ onClose, saleId }: DialogProps & { saleId: st
       {!mayReview && (
         <div className="mb-4">
           <InlineAlert tone="amber" title="Aguardando o financeiro">
-            Quem pode conferir: {reviewers.map((m) => m.name).join(", ")}. Seu papel permite propor as condições, mas
+            Quem pode confirmar: {reviewers.map((m) => m.name).join(", ")}. Seu papel permite propor as condições, mas
             não criar as contas a receber.
           </InlineAlert>
         </div>

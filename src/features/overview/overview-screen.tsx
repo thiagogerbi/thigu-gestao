@@ -3,6 +3,7 @@
 import { useDialogs } from "@/components/layout/dialog-context";
 import { Button } from "@/components/ui/button";
 import { Card, PageHeader } from "@/components/ui/card";
+import { HelpTip } from "@/components/ui/help-tip";
 import {
   IconAlert,
   IconArrowRight,
@@ -13,8 +14,8 @@ import {
   IconPlus,
   IconWallet,
 } from "@/components/ui/icons";
-import { KpiCard } from "@/components/ui/kpi-card";
 import { cx } from "@/components/ui/styles";
+import { MoneyJourney } from "@/features/overview/money-journey";
 import { formatDateBR } from "@/lib/domain/dates";
 import { formatBRL } from "@/lib/domain/money";
 import { computeOverview } from "@/lib/domain/overview";
@@ -23,131 +24,157 @@ import { useBackend, useCan } from "@/state/backend-context";
 import { clientById, firstName } from "@/state/selectors";
 import { useNav } from "@/state/use-nav";
 import Link from "next/link";
+import { useState } from "react";
+
+const VISIBLE_PRIORITIES = 3;
 
 interface Priority {
   key: string;
-  tone: "red" | "amber" | "blue" | "green";
+  tone: "red" | "amber" | "blue";
   icon: React.ReactNode;
   title: string;
   detail: string;
-  who?: string;
   href: string;
   cta: string;
 }
+
+const TONE_BORDER = { red: "border-[#f7c9c4]", amber: "border-[#f5d9a8]", blue: "border-line" };
+const TONE_ICON = {
+  red: "bg-danger-50 text-danger",
+  amber: "bg-warn-50 text-warn",
+  blue: "bg-primary-50 text-primary-700",
+};
 
 function greeting(d = new Date()) {
   const h = d.getHours();
   return h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
 }
 
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
 export function OverviewScreen() {
   const { data, me, today } = useBackend();
   const canDo = useCan();
   const nav = useNav();
   const dialogs = useDialogs();
+  const [showAll, setShowAll] = useState(false);
   const ov = computeOverview(data, today);
   const fin = canDo("financeiro.ver");
   const crm = canDo("crm.editar_proprios");
   const seesReceivables = fin || canDo("recebiveis.ver_proprios");
 
-  const pr: Priority[] = [];
-  if (ov.awaitingReviewCount > 0 && (canDo("venda.conferir") || crm)) {
-    pr.push({
-      key: "conferir",
-      tone: "amber",
-      icon: <IconWallet />,
-      title: `${ov.awaitingReviewCount} ${ov.awaitingReviewCount === 1 ? "venda aguardando" : "vendas aguardando"} conferência`,
-      detail: `${formatBRL(ov.awaitingReviewCents)} ainda não viraram contas a receber.`,
-      who: canDo("venda.conferir") ? "Você confere" : "O financeiro confere",
-      href: nav.href("/financeiro", { aba: "conferir" }),
-      cta: "Ver vendas para conferir",
-    });
-  }
+  // Avisos em ordem de urgência: dinheiro atrasado primeiro, depois o que trava o fluxo, depois o dia a dia.
+  const priorities: Priority[] = [];
   if (seesReceivables && ov.overdueReceivablesCount > 0) {
-    pr.push({
+    priorities.push({
       key: "atrasados",
       tone: "red",
       icon: <IconAlert />,
-      title: `${ov.overdueReceivablesCount} ${ov.overdueReceivablesCount === 1 ? "recebimento atrasado" : "recebimentos atrasados"}`,
-      detail: `${formatBRL(ov.overdueReceivablesCents)} venceram e ainda não foram recebidos.`,
+      title: `${plural(ov.overdueReceivablesCount, "pagamento atrasado", "pagamentos atrasados")} de clientes`,
+      detail: `${formatBRL(ov.overdueReceivablesCents)} já venceram. Se o cliente pagou, registre o recebimento.`,
       href: nav.href("/financeiro", { aba: "receber", filtro: "atrasadas" }),
-      cta: "Ver recebimentos atrasados",
+      cta: "Ver quem está atrasado",
     });
   }
-  if (fin && ov.overduePayablesCount + ov.dueSoonPayablesCount > 0) {
-    pr.push({
+  if (ov.awaitingReviewCount > 0 && (canDo("venda.conferir") || crm)) {
+    priorities.push({
+      key: "conferir",
+      tone: "amber",
+      icon: <IconWallet />,
+      title: `${plural(ov.awaitingReviewCount, "venda esperando", "vendas esperando")} confirmação das parcelas`,
+      detail: canDo("venda.conferir")
+        ? "Confirme as parcelas para que elas entrem em “Falta receber”."
+        : "O financeiro precisa confirmar as parcelas.",
+      href: nav.href("/financeiro", { aba: "conferir" }),
+      cta: canDo("venda.conferir") ? "Confirmar parcelas" : "Ver vendas",
+    });
+  }
+  if (fin && ov.overduePayablesCount > 0) {
+    priorities.push({
       key: "pagar",
-      tone: ov.overduePayablesCount ? "red" : "blue",
+      tone: "red",
       icon: <IconClock />,
-      title: ov.overduePayablesCount
-        ? `${ov.overduePayablesCount} ${ov.overduePayablesCount === 1 ? "conta a pagar vencida" : "contas a pagar vencidas"}`
-        : `${ov.dueSoonPayablesCount} ${ov.dueSoonPayablesCount === 1 ? "conta vence" : "contas vencem"} nos próximos 7 dias`,
-      detail: `Total a pagar em aberto: ${formatBRL(ov.toPayCents)}.`,
-      href: nav.href("/financeiro", { aba: "pagar", filtro: ov.overduePayablesCount ? "atrasadas" : "7dias" }),
-      cta: ov.overduePayablesCount ? "Ver contas vencidas" : "Ver contas da semana",
+      title: `${plural(ov.overduePayablesCount, "conta da empresa vencida", "contas da empresa vencidas")}`,
+      detail: "Contas que a empresa precisa pagar e já passaram do vencimento.",
+      href: nav.href("/financeiro", { aba: "pagar", filtro: "atrasadas" }),
+      cta: "Ver contas vencidas",
     });
   }
   if (ov.tasksOverdue > 0) {
-    pr.push({
+    priorities.push({
       key: "tarefas-atrasadas",
       tone: "red",
       icon: <IconCheck />,
-      title: `${ov.tasksOverdue} ${ov.tasksOverdue === 1 ? "tarefa atrasada" : "tarefas atrasadas"}`,
+      title: plural(ov.tasksOverdue, "tarefa atrasada", "tarefas atrasadas"),
       detail: "Combinados que passaram do prazo.",
       href: nav.href("/tarefas", { filtro: "atrasadas" }),
       cta: "Ver tarefas atrasadas",
     });
   }
+  for (const f of ov.proposalsToFollow) {
+    const p = data.proposals.find((x) => x.id === f.proposalId)!;
+    priorities.push({
+      key: `proposta-${p.id}`,
+      tone: "blue",
+      icon: <IconDoc />,
+      title: `${clientById(data, f.clientId)?.name ?? "Cliente"} ainda não respondeu a proposta`,
+      detail: `${formatBRL(proposalTotalCents(p.items, p.discountCents))} · enviada há ${plural(f.daysSinceSent, "dia", "dias")}. Que tal ligar?`,
+      href: nav.href(`/propostas/${p.id}`),
+      cta: "Ver proposta",
+    });
+  }
   if (ov.tasksToday > 0) {
-    pr.push({
+    priorities.push({
       key: "tarefas-hoje",
       tone: "blue",
       icon: <IconCheck />,
-      title: `${ov.tasksToday} ${ov.tasksToday === 1 ? "tarefa para hoje" : "tarefas para hoje"}`,
+      title: plural(ov.tasksToday, "tarefa para hoje", "tarefas para hoje"),
       detail: "O que precisa ser feito ainda hoje.",
       href: nav.href("/tarefas", { filtro: "hoje" }),
       cta: "Ver tarefas de hoje",
     });
   }
   if (crm && ov.staleDealsCount > 0) {
-    pr.push({
+    priorities.push({
       key: "paradas",
       tone: "amber",
       icon: <IconClock />,
-      title: `${ov.staleDealsCount} ${ov.staleDealsCount === 1 ? "negociação parada" : "negociações paradas"}`,
-      detail: "Sem atualização há 7 dias ou com a próxima ação atrasada.",
+      title: `${plural(ov.staleDealsCount, "negociação parada", "negociações paradas")}`,
+      detail: "Clientes sem contato há mais de uma semana.",
       href: nav.href("/negociacoes", { filtro: "paradas" }),
       cta: "Ver negociações paradas",
     });
   }
+  const visible = showAll ? priorities : priorities.slice(0, VISIBLE_PRIORITIES);
+  const hidden = priorities.length - visible.length;
 
   const steps = [
     {
       done: ov.onboarding.client,
       label: "Cadastre seu primeiro cliente",
-      action: () => dialogs.open({ kind: "client" }),
       cta: "Cadastrar cliente",
+      action: () => dialogs.open({ kind: "client" }),
     },
     {
       done: ov.onboarding.deal,
-      label: "Adicione uma negociação",
-      action: () => dialogs.open({ kind: "deal" }),
+      label: "Anote uma venda que está conversando",
       cta: "Nova negociação",
+      action: () => dialogs.open({ kind: "deal" }),
     },
     {
       done: ov.onboarding.proposal,
       label: "Prepare uma proposta",
+      cta: "Preparar proposta",
       action: () => {
         const d = data.deals[0];
         dialogs.open({ kind: "proposal", dealId: d?.id, clientId: d?.clientId });
       },
-      cta: "Preparar proposta",
     },
     {
       done: ov.onboarding.receipt,
-      label: "Registre o primeiro recebimento",
-      action: () => dialogs.open({ kind: "settle", accountKind: "receber" }),
+      label: "Registre o primeiro pagamento recebido",
       cta: "Registrar recebimento",
+      action: () => dialogs.open({ kind: "settle", accountKind: "receber" }),
     },
   ];
   const showOnboarding = crm && steps.some((s) => !s.done);
@@ -155,11 +182,11 @@ export function OverviewScreen() {
 
   const primary =
     canDo("financeiro.registrar") && !crm ? (
-      <Button variant="money" onClick={() => dialogs.open({ kind: "settle", accountKind: "receber" })}>
+      <Button variant="money" size="lg" onClick={() => dialogs.open({ kind: "settle", accountKind: "receber" })}>
         <IconMoneyIn className="h-5 w-5" /> Registrar recebimento
       </Button>
     ) : crm ? (
-      <Button onClick={() => dialogs.open({ kind: "deal" })}>
+      <Button size="lg" onClick={() => dialogs.open({ kind: "deal" })}>
         <IconPlus className="h-5 w-5" /> Nova negociação
       </Button>
     ) : null;
@@ -170,19 +197,10 @@ export function OverviewScreen() {
         title="Visão geral"
         description={
           <>
-            {greeting()}, {firstName(me.name)}. Hoje é {formatDateBR(today)}. Veja o que precisa da sua atenção.
+            {greeting()}, {firstName(me.name)}! Hoje é {formatDateBR(today)}. Aqui está o resumo do seu negócio.
           </>
         }
-        actions={
-          <>
-            {primary}
-            {canDo("financeiro.registrar") && crm && (
-              <Button variant="secondary" onClick={() => dialogs.open({ kind: "settle", accountKind: "receber" })}>
-                Registrar recebimento
-              </Button>
-            )}
-          </>
-        }
+        actions={primary}
       />
 
       {showOnboarding && (
@@ -230,181 +248,119 @@ export function OverviewScreen() {
 
       <section aria-labelledby="prioridades" className="mb-8">
         <h2 id="prioridades" className="mb-3 font-display text-lg font-bold">
-          O que fazer agora
+          Hoje você precisa
         </h2>
-        {pr.length === 0 && ov.proposalsToFollow.length === 0 ? (
+        {priorities.length === 0 ? (
           <Card className="p-5">
             <p className="font-semibold">Tudo em dia por aqui.</p>
             <p className="text-muted">Nenhum atraso ou pendência importante agora.</p>
           </Card>
         ) : (
-          <ul className="grid gap-3 md:grid-cols-2">
-            {pr.map((p) => (
-              <li key={p.key}>
-                <Link
-                  href={p.href}
-                  className={cx(
-                    "flex h-full items-start gap-3 rounded-xl border bg-white p-4 hover:shadow-md",
-                    { red: "border-[#f7c9c4]", amber: "border-[#f5d9a8]", blue: "border-line", green: "border-line" }[
-                      p.tone
-                    ],
-                  )}
-                >
-                  <span
+          <>
+            <ul className="grid gap-3">
+              {visible.map((p) => (
+                <li key={p.key}>
+                  <Link
+                    href={p.href}
                     className={cx(
-                      "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
-                      {
-                        red: "bg-danger-50 text-danger",
-                        amber: "bg-warn-50 text-warn",
-                        blue: "bg-primary-50 text-primary-700",
-                        green: "bg-money-50 text-money-700",
-                      }[p.tone],
+                      "flex items-center gap-3 rounded-xl border bg-white p-4 hover:shadow-md",
+                      TONE_BORDER[p.tone],
                     )}
                   >
-                    {p.icon}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-semibold">{p.title}</span>
-                    <span className="block text-sm text-muted">
-                      {p.detail}
-                      {p.who ? ` ${p.who}.` : ""}
-                    </span>
-                    <span className="mt-1 inline-flex items-center gap-1 text-sm font-semibold text-primary-700">
-                      {p.cta} <IconArrowRight className="h-4 w-4" />
-                    </span>
-                  </span>
-                </Link>
-              </li>
-            ))}
-            {ov.proposalsToFollow.slice(0, 4).map((f) => {
-              const p = data.proposals.find((x) => x.id === f.proposalId)!;
-              const c = clientById(data, f.clientId);
-              return (
-                <li key={f.proposalId}>
-                  <div className="flex h-full items-start gap-3 rounded-xl border border-line bg-white p-4">
-                    <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700">
-                      <IconDoc />
+                    <span
+                      className={cx(
+                        "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+                        TONE_ICON[p.tone],
+                      )}
+                    >
+                      {p.icon}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block font-semibold">Proposta para {c?.name} aguardando resposta</span>
-                      <span className="block text-sm text-muted">
-                        Nº {p.number} · {formatBRL(proposalTotalCents(p.items, p.discountCents))} · enviada há{" "}
-                        {f.daysSinceSent} {f.daysSinceSent === 1 ? "dia" : "dias"}
-                      </span>
-                      <span className="mt-1 flex flex-wrap gap-x-4">
-                        <Link
-                          href={nav.href(`/propostas/${p.id}`)}
-                          className="inline-flex min-h-9 items-center gap-1 text-sm font-semibold text-primary-700"
-                        >
-                          Ver proposta <IconArrowRight className="h-4 w-4" />
-                        </Link>
-                        {c && (
-                          <button
-                            type="button"
-                            onClick={() => nav.openClient(c.id, p.dealId)}
-                            className="min-h-9 text-sm font-semibold text-primary-700"
-                          >
-                            Abrir ficha do cliente
-                          </button>
-                        )}
-                      </span>
+                      <span className="block font-semibold">{p.title}</span>
+                      <span className="block text-sm text-muted">{p.detail}</span>
                     </span>
-                  </div>
+                    <span className="hidden shrink-0 items-center gap-1 font-semibold text-primary-700 sm:inline-flex">
+                      {p.cta} <IconArrowRight className="h-4 w-4" />
+                    </span>
+                    <IconArrowRight className="h-5 w-5 shrink-0 text-primary-700 sm:hidden" />
+                  </Link>
                 </li>
-              );
-            })}
-          </ul>
+              ))}
+            </ul>
+            {(hidden > 0 || showAll) && priorities.length > VISIBLE_PRIORITIES && (
+              <Button variant="ghost" className="mt-2" onClick={() => setShowAll((s) => !s)} aria-expanded={showAll}>
+                {showAll ? "Mostrar menos" : `Ver mais ${plural(hidden, "aviso", "avisos")}`}
+              </Button>
+            )}
+          </>
         )}
       </section>
 
+      <MoneyJourney ov={ov} />
+
       {seesReceivables && (
-        <section aria-labelledby="dinheiro" className="mb-8">
-          <h2 id="dinheiro" className="mb-1 font-display text-lg font-bold">
-            Vendas e dinheiro
+        <section aria-labelledby="dinheiro">
+          <h2 id="dinheiro" className="mb-3 font-display text-lg font-bold">
+            Dinheiro
           </h2>
-          <p className="mb-3 text-sm text-muted">
-            Venda fechada não é dinheiro no caixa: o valor só conta como recebido depois que alguém registra o
-            recebimento.
-          </p>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <KpiCard
-              icon={<IconDoc className="h-4 w-4" />}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <MoneyFigure
               label="Vendido"
               value={ov.soldCents}
-              help={
-                ov.awaitingReviewCents
-                  ? `Vendas fechadas. ${formatBRL(ov.awaitingReviewCents)} aguardam conferência.`
-                  : "Vendas fechadas (todas já conferidas)."
-              }
+              help="Soma das vendas fechadas. Ainda não é dinheiro no bolso: só conta como recebido quando o cliente paga."
             />
-            <KpiCard
-              icon={<IconMoneyIn className="h-4 w-4" />}
+            <MoneyFigure
               label="Recebido"
               value={ov.receivedCents}
               tone="money"
-              help="Dinheiro que efetivamente entrou."
+              help="Dinheiro que realmente entrou, registrado com “Registrar recebimento”."
               href={fin ? nav.href("/financeiro", { aba: "caixa" }) : undefined}
             />
-            <KpiCard
-              icon={<IconWallet className="h-4 w-4" />}
-              label="A receber"
+            <MoneyFigure
+              label="Falta receber"
               value={ov.toReceiveCents}
               tone="primary"
-              help={
-                ov.overdueReceivablesCents
-                  ? `Parcelas confirmadas em aberto. ${formatBRL(ov.overdueReceivablesCents)} em atraso.`
-                  : "Parcelas confirmadas em aberto."
-              }
+              help="Parcelas já confirmadas que os clientes ainda vão pagar."
               href={nav.href("/financeiro", { aba: "receber" })}
             />
-            {fin && (
-              <KpiCard
-                icon={<IconClock className="h-4 w-4" />}
-                label="Contas a pagar"
-                value={ov.toPayCents}
-                tone={ov.overduePayablesCount ? "danger" : "ink"}
-                help="Despesas em aberto."
-                href={nav.href("/financeiro", { aba: "pagar" })}
-              />
-            )}
-            {fin && (
-              <KpiCard
-                icon={<IconCheck className="h-4 w-4" />}
-                label="Caixa realizado"
-                value={ov.cashCents}
-                tone={ov.cashCents < 0 ? "danger" : "money"}
-                help="Entradas menos saídas registradas."
-                href={nav.href("/financeiro", { aba: "caixa" })}
-              />
-            )}
           </div>
         </section>
       )}
-
-      {crm && (
-        <section aria-labelledby="negs">
-          <h2 id="negs" className="mb-3 font-display text-lg font-bold">
-            Negociações em andamento
-          </h2>
-          <Link
-            href={nav.href("/negociacoes")}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-white p-4 hover:border-primary"
-          >
-            <span>
-              <span className="block font-semibold">
-                {ov.openDealsCount} {ov.openDealsCount === 1 ? "negociação aberta" : "negociações abertas"} ·{" "}
-                <span className="tabular">{formatBRL(ov.pipelineCents)}</span>
-              </span>
-              <span className="block text-sm text-muted">
-                Valores ainda incertos: não entram em “a receber” nem no caixa.
-              </span>
-            </span>
-            <span className="inline-flex items-center gap-1 text-sm font-semibold text-primary-700">
-              Ver negociações <IconArrowRight className="h-4 w-4" />
-            </span>
-          </Link>
-        </section>
-      )}
     </>
+  );
+}
+
+function MoneyFigure({
+  label,
+  value,
+  help,
+  tone,
+  href,
+}: {
+  label: string;
+  value: number;
+  help: string;
+  tone?: "money" | "primary";
+  href?: string;
+}) {
+  const color = tone === "money" ? "text-money-700" : tone === "primary" ? "text-primary-700" : "text-ink";
+  const body = (
+    <>
+      <span className="font-display text-3xl font-extrabold tabular">{formatBRL(value)}</span>
+    </>
+  );
+  return (
+    <div className="rounded-xl border border-line bg-white p-4">
+      <p className="flex items-center gap-2 font-semibold">
+        {label} <HelpTip term={label}>{help}</HelpTip>
+      </p>
+      {href ? (
+        <Link href={href} className={cx("mt-1 block hover:underline", color)}>
+          {body}
+        </Link>
+      ) : (
+        <p className={cx("mt-1", color)}>{body}</p>
+      )}
+    </div>
   );
 }

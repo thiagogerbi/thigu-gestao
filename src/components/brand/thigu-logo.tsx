@@ -35,7 +35,7 @@ export function ThiguLogo({
   const s = {
     sm: { mark: "h-7 w-7", word: "text-[20px]", sub: "text-[8px]" },
     md: { mark: "h-9 w-9", word: "text-[26px]", sub: "text-[9px]" },
-    lg: { mark: "h-14 w-14", word: "text-[44px]", sub: "text-[13px]" },
+    lg: { mark: "h-14 w-14", word: "text-[44px]", sub: "text-sm" },
   }[size];
   return (
     <span

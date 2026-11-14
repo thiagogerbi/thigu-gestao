@@ -125,7 +125,7 @@ export function SettleDialog({
               <p className="font-display text-lg font-bold">
                 {isIn ? `Quanto ${firstName(view.partyName)} pagou?` : `Quanto foi pago para ${view.partyName}?`}
               </p>
-              <p className="text-[15px]">
+              <p className="text-base">
                 {acc.installmentCount > 1 ? `Parcela ${acc.installmentNumber} de ${acc.installmentCount}` : "Conta"} de{" "}
                 <strong>{formatBRL(acc.amountCents)}</strong> — vencimento em {formatShortDateBR(acc.dueDate)}
               </p>
@@ -167,11 +167,12 @@ export function SettleDialog({
                   value={amountText}
                   onChange={(e) => changeAmount(e.target.value)}
                   error={amountError}
-                  data-autofocus
+                  // ao escolher "Recebi uma parte", o cursor já vai para o valor
+                  autoFocus
                   hint={`No máximo ${formatBRL(view.balance)}.`}
                 />
                 {remaining !== null && !amountError && (
-                  <p className="mt-2 text-[15px] tabular" role="status">
+                  <p className="mt-2 text-base tabular" role="status">
                     Ainda faltará {isIn ? "receber" : "pagar"}: <strong>{formatBRL(remaining)}</strong>
                   </p>
                 )}

@@ -8,8 +8,9 @@ import { Modal } from "@/components/ui/overlay";
 import { cx } from "@/components/ui/styles";
 import { ToastProvider } from "@/components/ui/toast";
 import { ClientDrawer } from "@/features/clients/client-drawer";
+import { PreviewTour } from "@/features/tour/preview-tour";
 import { can, usesCrm } from "@/lib/domain/permissions";
-import { ROLE_LABEL } from "@/lib/domain/types";
+import { ROLE_LABEL, type Role } from "@/lib/domain/types";
 import { useBackend } from "@/state/backend-context";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -53,7 +54,7 @@ function CompanySwitcher({ dark }: { dark?: boolean }) {
     <label className="block">
       <span
         className={cx(
-          "mb-1 block text-[12px] font-semibold uppercase tracking-wide",
+          "mb-1 block text-xs font-semibold uppercase tracking-wide",
           dark ? "text-[#c9d6ea]" : "text-muted",
         )}
       >
@@ -169,7 +170,7 @@ function MobileNav() {
                 href={it.href}
                 aria-current={active ? "page" : undefined}
                 className={cx(
-                  "flex min-h-16 flex-col items-center justify-center gap-0.5 px-1 text-[12px] font-medium",
+                  "flex min-h-16 flex-col items-center justify-center gap-0.5 px-1 text-xs font-medium",
                   active ? "text-primary" : "text-muted",
                 )}
               >
@@ -184,44 +185,59 @@ function MobileNav() {
   );
 }
 
+/** Como cada papel aparece na prévia, em linguagem do dia a dia. */
+const PERSONA_HINT: Record<Role, string> = {
+  admin: "dona da empresa, pode fazer tudo",
+  gestor: "acompanha a equipe de vendas",
+  vendedor: "cuida dos próprios clientes",
+  financeiro: "cuida do dinheiro",
+};
+
 function PreviewBanner() {
   const { preview, me } = useBackend();
   const [confirming, setConfirming] = useState(false);
+  const [tourOpen, setTourOpen] = useState(true);
   if (!preview) return null;
   return (
     <div
-      className="border-b border-[#f5d9a8] bg-warn-50 px-4 py-2.5 text-[14px] text-[#6b4106] lg:px-8 print:hidden"
+      className="border-b border-[#f5d9a8] bg-warn-50 px-4 py-2.5 text-sm text-[#6b4106] lg:px-8 print:hidden"
       role="region"
       aria-label="Aviso da prévia"
     >
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-2">
         <p className="flex-1 basis-72">
-          <strong>Prévia com dados fictícios.</strong> Nada é salvo nem enviado: as alterações ficam só nesta aba e
-          somem ao recarregar a página.
+          <strong>Isto é uma demonstração com dados de exemplo.</strong> Pode clicar à vontade: nada é salvo nem
+          enviado.
         </p>
-        <label className="flex items-center gap-2">
-          <span className="font-semibold">Ver como:</span>
+        <label className="flex flex-wrap items-center gap-2">
+          <span className="font-semibold">Experimente como:</span>
           <select
             value={me.userId}
             onChange={(e) => preview.setPersona(e.target.value)}
-            className="min-h-9 rounded-lg border border-[#e4c487] bg-white px-2 text-ink"
+            className="min-h-10 max-w-full rounded-lg border border-[#e4c487] bg-white px-2 text-ink"
           >
             {preview.personas.map((p) => (
               <option key={p.userId} value={p.userId}>
-                {p.name} ({p.roles.map((r) => ROLE_LABEL[r]).join(", ")})
+                {p.name} — {p.roles.map((r) => PERSONA_HINT[r]).join(", ")}
               </option>
             ))}
           </select>
         </label>
-        <Button size="sm" variant="secondary" onClick={() => setConfirming(true)}>
-          Restaurar exemplo
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" onClick={() => setTourOpen(true)} aria-expanded={tourOpen}>
+            Guia passo a passo
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setConfirming(true)}>
+            Recomeçar exemplo
+          </Button>
+        </div>
       </div>
+      <PreviewTour open={tourOpen} onClose={() => setTourOpen(false)} />
       <Modal
         open={confirming}
         onClose={() => setConfirming(false)}
         size="sm"
-        title="Restaurar o exemplo?"
+        title="Recomeçar o exemplo?"
         footer={
           <>
             <Button variant="secondary" onClick={() => setConfirming(false)}>
@@ -233,7 +249,7 @@ function PreviewBanner() {
                 setConfirming(false);
               }}
             >
-              Restaurar exemplo
+              Recomeçar exemplo
             </Button>
           </>
         }

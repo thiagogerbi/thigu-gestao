@@ -32,7 +32,7 @@ export function KpiCard({
         {label}
       </p>
       <p className={cx("mt-2 font-display text-2xl font-extrabold tabular", color)}>{formatBRL(value)}</p>
-      <p className="mt-1 text-[13px] text-muted">{help}</p>
+      <p className="mt-1 text-sm text-muted">{help}</p>
     </>
   );
   return href ? (

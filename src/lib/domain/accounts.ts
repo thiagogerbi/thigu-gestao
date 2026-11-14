@@ -5,14 +5,14 @@ export type AccountStatus = "pendente" | "parcial" | "quitada" | "atrasada" | "c
 
 export const ACCOUNT_STATUS_LABEL: Record<AccountStatus, string> = {
   pendente: "Pendente",
-  parcial: "Parcialmente recebida",
+  parcial: "Pagou uma parte",
   quitada: "Quitada",
   atrasada: "Atrasada",
   cancelada: "Cancelada",
 };
 
 export function statusLabel(status: AccountStatus, kind: Account["kind"]): string {
-  if (status === "parcial") return kind === "receber" ? "Parcialmente recebida" : "Parcialmente paga";
+  if (status === "parcial") return kind === "receber" ? "Pagou uma parte" : "Paga em parte";
   if (status === "quitada") return kind === "receber" ? "Recebida" : "Paga";
   return ACCOUNT_STATUS_LABEL[status];
 }

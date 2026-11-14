@@ -76,7 +76,7 @@ export function AccountCard({ view, showParty = true }: { view: AccountView; sho
       </dl>
       {a.canceledAt && (
         <p className="mt-2 text-sm text-muted">
-          Cancelada em {formatDateBR(a.canceledAt.slice(0, 10))}. Motivo: {a.cancelReason}
+          Cancelada em {formatDateBR(a.canceledAt)}. Motivo: {a.cancelReason}
         </p>
       )}
 
@@ -85,6 +85,7 @@ export function AccountCard({ view, showParty = true }: { view: AccountView; sho
           <Button
             size="sm"
             variant={isIn ? "money" : "primary"}
+            data-tour={isIn ? "receber" : undefined}
             onClick={() => dialogs.open({ kind: "settle", accountId: a.id, accountKind: a.kind })}
           >
             {isIn ? <IconMoneyIn className="h-4 w-4" /> : <IconMoneyOut className="h-4 w-4" />}

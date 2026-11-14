@@ -222,7 +222,7 @@ export function Drawer({
       >
         <div className="flex items-start justify-between gap-3 border-b border-line bg-white px-5 py-4">
           <div className="min-w-0">
-            <p className="text-[13px] font-semibold uppercase tracking-wide text-muted">Ficha do cliente</p>
+            <p className="text-sm font-semibold uppercase tracking-wide text-muted">Ficha do cliente</p>
             <h2 id={titleId} className="truncate text-xl font-bold">
               {title}
             </h2>

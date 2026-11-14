@@ -387,13 +387,13 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
       deal.nextActionDate = null;
       log(
         "venda",
-        `Venda fechada: ${formatBRL(a.totalCents)} em ${a.plan.length === 1 ? "1 parcela" : `${a.plan.length} parcelas`}. Aguardando conferência do financeiro.`,
+        `Venda fechada: ${formatBRL(a.totalCents)} em ${a.plan.length === 1 ? "1 parcela" : `${a.plan.length} parcelas`}. Aguardando o financeiro confirmar as parcelas.`,
         deal.clientId,
         deal.id,
       );
       return {
         ok: true,
-        message: `Venda de ${formatBRL(a.totalCents)} fechada. Agora o financeiro confere as parcelas.`,
+        message: `Venda de ${formatBRL(a.totalCents)} fechada. Agora o financeiro confirma as parcelas.`,
         id,
       };
     }
@@ -405,7 +405,7 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
       if (sale.status === "confirmada") {
         return {
           ok: true,
-          message: "Esta venda já tinha sido conferida. Nenhuma parcela nova foi criada.",
+          message: "As parcelas desta venda já tinham sido confirmadas. Nenhuma parcela nova foi criada.",
           id: sale.id,
           extra: { duplicate: true },
         };
@@ -441,7 +441,7 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
       sale.reviewedAt = nowIso;
       log(
         "venda",
-        `Financeiro conferiu a venda e criou ${a.plan.length} ${a.plan.length === 1 ? "conta" : "contas"} a receber.`,
+        `Financeiro confirmou as parcelas e criou ${a.plan.length} ${a.plan.length === 1 ? "conta" : "contas"} a receber.`,
         sale.clientId,
         sale.dealId,
       );

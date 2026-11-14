@@ -1,4 +1,4 @@
-import type { ISODate } from "@/lib/domain/types";
+import type { ISODate, ISODateTime } from "@/lib/domain/types";
 
 const pad = (n: number) => n.toString().padStart(2, "0");
 
@@ -45,9 +45,14 @@ export function diffDays(a: ISODate, b: ISODate): number {
 }
 
 /** "2026-11-06" → "06/11/2026" */
-export function formatDateBR(iso: ISODate | null | undefined): string {
+/**
+ * "2026-11-06" → "06/11/2026". Também aceita data com horário (ISO completo, em UTC):
+ * nesse caso usa a data local, para que algo feito às 22h não apareça como "amanhã".
+ */
+export function formatDateBR(iso: ISODate | ISODateTime | null | undefined): string {
   if (!iso) return "—";
-  const { y, m, d } = parts(iso.slice(0, 10));
+  const day = iso.length > 10 ? toISODate(new Date(iso)) : iso;
+  const { y, m, d } = parts(day);
   return `${pad(d)}/${pad(m)}/${y}`;
 }
 

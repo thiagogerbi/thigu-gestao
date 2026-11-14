@@ -59,15 +59,15 @@ Abra <http://localhost:3000>:
 
 ## Roteiro de uso (prévia)
 
-1. Abra `/previa`. A faixa amarela avisa que os dados são fictícios e que nada é salvo.
-2. Use **Ver como** para trocar de papel: Ana (dona), Bruno (vendedor), Carla (financeiro), Diego (gestor).
+1. Abra `/previa`. O **Guia passo a passo** abre sozinho: são 5 passos que contam a história do produto, cada um com um botão **Me mostre** que leva à tela certa e destaca onde clicar. Os passos se marcam como feitos quando a ação acontece.
+2. Use **Experimente como** para trocar de papel: Ana (dona), Bruno (vendedor), Carla (financeiro), Diego (gestor).
 3. **Fluxo completo na Aurora Estúdio:**
    - Visão geral › _Proposta para João Pereira_ › **Ver proposta** (abre a própria proposta);
    - **Registrar aceite do cliente** › **Fechar venda** (escolha à vista ou parcelado e confira a prévia das parcelas);
    - **Conferir parcelas agora** (como dona ou Carla) › **Criar 3 parcelas a receber**;
    - Financeiro › A receber › **Registrar recebimento** › _Recebi uma parte_ › R$ 200,00.
 4. **Primeiro uso:** troque para **Horizonte Serviços** no seletor "Minha empresa". A empresa está vazia e mostra os 4 primeiros passos.
-5. **Restaurar exemplo** volta tudo ao início. Recarregar a página também.
+5. **Recomeçar exemplo** volta tudo ao início. Recarregar a página também.
 
 ---
 

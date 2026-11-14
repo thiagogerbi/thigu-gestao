@@ -21,21 +21,52 @@ import { useAction, useBackend, useCan, useMemberName } from "@/state/backend-co
 import { accountView, clientById, saleForDeal } from "@/state/selectors";
 import { useNav } from "@/state/use-nav";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
+const NOTE_FIELD_ID = "ficha-anotacao";
+
+/**
+ * Seção da ficha. Com `collapsible`, vira um bloco que abre e fecha (nativo e acessível),
+ * mostrando no título quantos itens há dentro — a ficha fica curta e a pessoa abre só o que precisa.
+ */
 function Section({
   title,
   children,
   action,
   id,
+  collapsible = false,
+  defaultOpen = false,
+  count,
 }: {
   title: string;
   children: React.ReactNode;
   action?: React.ReactNode;
   id?: string;
+  collapsible?: boolean;
+  defaultOpen?: boolean;
+  count?: number;
 }) {
+  if (collapsible) {
+    return (
+      <details open={defaultOpen} className="group mb-3 rounded-xl border border-line bg-white">
+        <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-2 px-4 font-display text-base font-bold [&::-webkit-details-marker]:hidden">
+          <span>
+            {title}
+            {count !== undefined && <span className="ml-2 font-sans text-sm font-semibold text-muted">({count})</span>}
+          </span>
+          <span aria-hidden="true" className="text-muted transition-transform group-open:rotate-180">
+            ▾
+          </span>
+        </summary>
+        <div className="px-4 pb-4">
+          {action && <div className="mb-3">{action}</div>}
+          {children}
+        </div>
+      </details>
+    );
+  }
   return (
-    <Card className="mb-4 p-4" aria-labelledby={id}>
+    <Card className="mb-3 p-4" aria-labelledby={id}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <h3 id={id} className="font-display text-base font-bold">
           {title}
@@ -74,7 +105,6 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
   const { exec, pending, error, clear } = useAction();
   const [note, setNote] = useState("");
   const [noteDeal, setNoteDeal] = useState(focusDeal ?? "");
-  const noteRef = useRef<HTMLTextAreaElement>(null);
   const client = clientById(data, clientId)!;
   const deals = data.deals
     .filter((d) => d.clientId === clientId)
@@ -126,6 +156,52 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
   const received = accounts.reduce((s, v) => s + v.settled, 0);
   const open = accounts.reduce((s, v) => s + v.balance, 0);
 
+  function focusNote() {
+    const el = document.getElementById(NOTE_FIELD_ID);
+    el?.closest("details")?.setAttribute("open", "");
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    el?.focus();
+  }
+
+  // Uma única sugestão, do mais urgente para o mais simples
+  const awaitingSale = sales.find((s) => s.status === "aguardando_conferencia");
+  const overdue = accounts.find((v) => v.status === "atrasada");
+  const sentProposal = proposals.find((p) => p.status === "enviada");
+  let suggestion: { text: string; cta: string; run: () => void; money?: boolean } | null = null;
+  if (awaitingSale && canDo("venda.conferir")) {
+    suggestion = {
+      text: `A venda de ${formatBRL(awaitingSale.totalCents)} está esperando você confirmar as parcelas.`,
+      cta: "Confirmar parcelas",
+      run: () => dialogs.open({ kind: "reviewSale", saleId: awaitingSale.id }),
+      money: true,
+    };
+  } else if (overdue && canDo("financeiro.registrar")) {
+    suggestion = {
+      text: `Tem uma parcela atrasada: faltam ${formatBRL(overdue.balance)}. Se ${client.name.split(" ")[0]} já pagou, registre aqui.`,
+      cta: "Registrar recebimento",
+      run: () => dialogs.open({ kind: "settle", accountId: overdue.account.id, accountKind: "receber" }),
+      money: true,
+    };
+  } else if (sentProposal && editable) {
+    suggestion = {
+      text: `A proposta nº ${sentProposal.number} ainda está sem resposta. Que tal ligar e perguntar?`,
+      cta: "Ver proposta",
+      run: () => nav.router.push(nav.href(`/propostas/${sentProposal.id}`)),
+    };
+  } else if (openDeals.length === 0 && editable) {
+    suggestion = {
+      text: "Nenhuma venda em conversa com este cliente agora.",
+      cta: "Começar uma negociação",
+      run: () => dialogs.open({ kind: "deal", clientId }),
+    };
+  } else if (mayNote) {
+    suggestion = {
+      text: "Conversou com o cliente? Anote o que foi combinado para não esquecer.",
+      cta: "Anotar conversa",
+      run: focusNote,
+    };
+  }
+
   return (
     <Drawer
       open
@@ -147,22 +223,35 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
         )
       }
     >
-      {/* Ações rápidas */}
-      <div className="mb-4 flex flex-wrap gap-2">
+      {/* Uma única sugestão clara, depois atalhos menores */}
+      {suggestion && (
+        <div data-tour="proximo-passo" className="mb-3 rounded-xl border-2 border-primary bg-primary-50 p-4">
+          <p className="text-sm font-semibold uppercase tracking-wide text-primary-700">O que fazer agora</p>
+          <p className="mt-1 text-base">{suggestion.text}</p>
+          <Button
+            className="mt-3 w-full sm:w-auto"
+            variant={suggestion.money ? "money" : "primary"}
+            onClick={suggestion.run}
+          >
+            {suggestion.cta}
+          </Button>
+        </div>
+      )}
+      <div className="mb-4 flex flex-wrap gap-x-1 gap-y-1" aria-label="Outras ações">
         {mayNote && (
-          <Button size="sm" onClick={() => noteRef.current?.focus()}>
-            Registrar o que foi combinado
+          <Button size="sm" variant="ghost" onClick={focusNote}>
+            Anotar conversa
           </Button>
         )}
         {editable && (
-          <Button size="sm" variant="secondary" onClick={() => dialogs.open({ kind: "deal", clientId })}>
+          <Button size="sm" variant="ghost" onClick={() => dialogs.open({ kind: "deal", clientId })}>
             <IconPlus className="h-4 w-4" /> Nova negociação
           </Button>
         )}
         {editable && openDeals.length > 0 && (
           <Button
             size="sm"
-            variant="secondary"
+            variant="ghost"
             onClick={() =>
               dialogs.open({ kind: "proposal", clientId, dealId: openDeals.length === 1 ? openDeals[0].id : undefined })
             }
@@ -171,7 +260,7 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
           </Button>
         )}
         {mayNote && (
-          <Button size="sm" variant="secondary" onClick={() => dialogs.open({ kind: "task", clientId })}>
+          <Button size="sm" variant="ghost" onClick={() => dialogs.open({ kind: "task", clientId })}>
             Nova tarefa
           </Button>
         )}
@@ -182,7 +271,7 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
           <div>
             <dt className="text-muted">Cliente desde</dt>
-            <dd className="font-semibold">{formatDateBR(client.createdAt.slice(0, 10))}</dd>
+            <dd className="font-semibold">{formatDateBR(client.createdAt)}</dd>
           </div>
           <div>
             <dt className="text-muted">Negociações abertas</dt>
@@ -252,8 +341,8 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
       </Section>
 
       {/* Contato */}
-      <Section title="Contato">
-        <ul className="grid gap-2 text-[15px]">
+      <Section title="Contato" collapsible defaultOpen>
+        <ul className="grid gap-2 text-base">
           <li className="flex items-center gap-2">
             <IconMail className="h-4 w-4 text-muted" />
             {client.email ? (
@@ -283,6 +372,9 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
       {/* Negociações */}
       <Section
         title="Negociações"
+        collapsible
+        count={deals.length}
+        defaultOpen={Boolean(focusDeal) || deals.length <= 2}
         action={
           editable && (
             <Button size="sm" variant="ghost" onClick={() => dialogs.open({ kind: "deal", clientId })}>
@@ -325,7 +417,7 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
                     {stale && <Badge tone="amber">{stale}</Badge>}
                     {sale && (
                       <Badge tone={sale.status === "confirmada" ? "green" : "amber"}>
-                        {sale.status === "confirmada" ? "Parcelas conferidas" : "Aguardando conferência"}
+                        {sale.status === "confirmada" ? "Parcelas confirmadas" : "Parcelas a confirmar"}
                       </Badge>
                     )}
                   </div>
@@ -359,7 +451,7 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
                         variant={canDo("venda.conferir") ? "money" : "secondary"}
                         onClick={() => dialogs.open({ kind: "reviewSale", saleId: sale.id })}
                       >
-                        {canDo("venda.conferir") ? "Conferir parcelas" : "Ver situação da venda"}
+                        {canDo("venda.conferir") ? "Confirmar parcelas" : "Ver situação da venda"}
                       </Button>
                     )}
                     {mayEdit && (
@@ -376,7 +468,7 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
       </Section>
 
       {/* Propostas */}
-      <Section title="Propostas comerciais">
+      <Section title="Propostas" collapsible count={proposals.length}>
         {proposals.length === 0 ? (
           <p className="text-sm text-muted">
             Nenhuma proposta. {openDeals.length ? "Use “Preparar proposta” para montar uma." : ""}
@@ -411,11 +503,11 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
 
       {/* Parcelas */}
       {showMoney && (
-        <Section title="Parcelas e recebimentos">
+        <Section title="Parcelas e pagamentos" collapsible count={accounts.length} defaultOpen={Boolean(overdue)}>
           {accounts.length === 0 ? (
             <p className="text-sm text-muted">
               {sales.some((s) => s.status === "aguardando_conferencia")
-                ? "Há venda aguardando conferência do financeiro. As parcelas aparecem aqui depois."
+                ? "Há venda esperando o financeiro confirmar as parcelas. Elas aparecem aqui depois."
                 : "Nenhuma parcela ainda."}
             </p>
           ) : (
@@ -433,7 +525,7 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
         {mayNote && (
           <form onSubmit={saveNote} className="mb-4 grid gap-2">
             <TextAreaField
-              ref={noteRef}
+              id={NOTE_FIELD_ID}
               label="O que foi combinado com o cliente?"
               value={note}
               onChange={(e) => {
@@ -480,11 +572,11 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
                     t.kind === "anotacao" ? "bg-primary" : "bg-[#9aa6b8]",
                   )}
                 />
-                <p className="text-[13px] text-muted">
+                <p className="text-sm text-muted">
                   {formatDateTimeBR(t.at)} · {name(t.who)}
                   {t.kind === "anotacao" ? " · Anotação" : ""}
                 </p>
-                <p className={cx("text-[15px]", t.kind === "anotacao" && "rounded-lg bg-primary-50 px-3 py-2")}>
+                <p className={cx("text-base", t.kind === "anotacao" && "rounded-lg bg-primary-50 px-3 py-2")}>
                   {t.text}
                 </p>
               </li>

@@ -18,6 +18,14 @@ import { useNav } from "@/state/use-nav";
 import { useState } from "react";
 
 type Tab = "conferir" | "receber" | "pagar" | "caixa";
+
+/** Uma frase simples sobre cada aba, sempre visível logo abaixo das abas. */
+const TAB_HELP: Record<Tab, string> = {
+  conferir: "Vendas fechadas pelos vendedores. Confira valores e datas para que virem parcelas a receber.",
+  receber: "Parcelas que os clientes vão pagar. Quando alguém pagar, toque em “Registrar recebimento”.",
+  pagar: "Contas que a empresa precisa pagar, como aluguel e fornecedores.",
+  caixa: "Tudo o que já entrou e saiu, e quanto deve sobrar nos próximos dias.",
+};
 const FILTERS = [
   { id: "abertas", label: "Em aberto" },
   { id: "atrasadas", label: "Atrasadas" },
@@ -38,7 +46,7 @@ export function FinanceScreen() {
   const tabs: { id: Tab; label: string; count?: number }[] = [
     {
       id: "conferir",
-      label: "Vendas para conferir",
+      label: "Vendas para confirmar",
       count: data.sales.filter((s) => s.status === "aguardando_conferencia").length,
     },
     { id: "receber", label: "A receber" },
@@ -78,7 +86,7 @@ export function FinanceScreen() {
         title="Financeiro"
         description={
           fin
-            ? "Vendas para conferir, dinheiro a receber, contas a pagar e o caixa da empresa."
+            ? "O dinheiro da empresa: o que os clientes vão pagar, o que a empresa precisa pagar e o que já entrou."
             : "Acompanhe as parcelas das suas vendas. Quem registra recebimentos é o financeiro."
         }
         actions={primary}
@@ -96,7 +104,7 @@ export function FinanceScreen() {
             aria-selected={tab === t.id}
             onClick={() => nav.setQuery({ aba: t.id, filtro: null })}
             className={cx(
-              "min-h-11 shrink-0 rounded-lg px-4 text-[15px] font-semibold",
+              "min-h-11 shrink-0 rounded-lg px-4 text-base font-semibold",
               tab === t.id ? "bg-navy text-white" : "text-ink hover:bg-canvas",
             )}
           >
@@ -114,6 +122,9 @@ export function FinanceScreen() {
           </button>
         ))}
       </div>
+      <p className="-mt-2 mb-5 rounded-lg bg-primary-50 px-3 py-2 text-primary-700" role="note">
+        {TAB_HELP[tab]}
+      </p>
 
       {tab === "conferir" && <ReviewTab />}
       {(tab === "receber" || tab === "pagar") && (
@@ -149,7 +160,7 @@ function ReviewTab() {
             <strong>1. Venda fechada</strong> — o vendedor propõe como o cliente vai pagar.
           </li>
           <li>
-            <strong>2. Conferir parcelas</strong> — o financeiro confere valores e datas e cria as contas a receber.
+            <strong>2. Confirmar parcelas</strong> — o financeiro (ou o dono) confere valores e datas.
           </li>
           <li>
             <strong>3. Acompanhar recebimentos</strong> — cada pagamento do cliente é registrado em “A receber”.
@@ -157,8 +168,8 @@ function ReviewTab() {
         </ol>
       </Card>
       {pending.length === 0 ? (
-        <EmptyState title="Nenhuma venda aguardando conferência">
-          Quando alguém fechar uma venda, ela aparece aqui para o financeiro conferir.
+        <EmptyState title="Nenhuma venda esperando confirmação">
+          Quando alguém fechar uma venda, ela aparece aqui para o financeiro confirmar as parcelas.
         </EmptyState>
       ) : (
         <ul className="grid gap-3 md:grid-cols-2">
@@ -172,16 +183,16 @@ function ReviewTab() {
                     <p className="font-display text-[17px] font-bold">{client?.name}</p>
                     <p className="text-sm text-muted">Venda: {deal?.title}</p>
                   </div>
-                  <Badge tone="amber">Etapa 2 de 3 · conferir parcelas</Badge>
+                  <Badge tone="amber">Etapa 2 de 3 · confirmar parcelas</Badge>
                 </div>
-                <p className="mt-2 text-[15px]">
+                <p className="mt-2 text-base">
                   <strong className="tabular">{formatBRL(s.totalCents)}</strong> ·{" "}
                   {s.plan.length === 1
                     ? `à vista em ${formatShortDateBR(s.plan[0].dueDate)}`
                     : `${s.plan.length} parcelas, 1ª em ${formatShortDateBR(s.plan[0].dueDate)}`}
                 </p>
                 <p className="text-sm text-muted">
-                  Fechada por {name(s.closedBy)} em {formatDateBR(s.closedAt.slice(0, 10))}
+                  Fechada por {name(s.closedBy)} em {formatDateBR(s.closedAt)}
                 </p>
                 <p className="mt-2 text-sm">
                   Quem precisa agir: <strong>{mayReview ? "você" : "o financeiro"}</strong>
@@ -189,10 +200,11 @@ function ReviewTab() {
                 <div className="mt-3">
                   <Button
                     variant={mayReview ? "money" : "secondary"}
+                    data-tour="conferir"
                     onClick={() => dialogs.open({ kind: "reviewSale", saleId: s.id })}
                   >
                     {mayReview
-                      ? `Conferir ${s.plan.length === 1 ? "parcela" : `${s.plan.length} parcelas`}`
+                      ? `Confirmar ${s.plan.length === 1 ? "parcela" : `${s.plan.length} parcelas`}`
                       : "Ver detalhes"}
                   </Button>
                 </div>
@@ -279,7 +291,7 @@ function AccountsTab({
       </div>
       <p className="mb-3 text-sm text-muted" role="status">
         {list.length} {list.length === 1 ? "conta" : "contas"} · {label.toLowerCase()} · saldo {formatBRL(total)}
-        {kind === "receber" && " · Só aparecem parcelas já conferidas; negociações em andamento não entram aqui."}
+        {kind === "receber" && " · Só aparecem parcelas já confirmadas; negociações em andamento não entram aqui."}
       </p>
       {list.length === 0 ? (
         <EmptyState
@@ -322,7 +334,7 @@ function CashTab() {
         />
         <KpiCard label="Saídas registradas" value={ov.paidOutCents} help="Pagamentos que não foram desfeitos." />
         <KpiCard
-          label="Caixa realizado"
+          label="Saldo do caixa"
           value={ov.cashCents}
           tone={ov.cashCents < 0 ? "danger" : "money"}
           help="Entradas menos saídas."
@@ -331,7 +343,7 @@ function CashTab() {
       <Card className="mb-6 p-4">
         <h2 className="font-display text-lg font-bold">Previsão de caixa</h2>
         <p className="mb-3 text-sm text-muted">
-          Caixa realizado + parcelas confirmadas a receber − contas a pagar, por vencimento (inclui o que já está
+          Saldo do caixa + parcelas confirmadas a receber − contas a pagar, por vencimento (inclui o que já está
           atrasado). Negociações em andamento não entram.
         </p>
         <ul className="grid gap-2 sm:grid-cols-3">

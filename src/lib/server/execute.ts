@@ -253,7 +253,7 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
       if (error) return dbFail(error);
       return {
         ok: true,
-        message: `Venda de ${formatBRL(a.totalCents)} fechada. Agora o financeiro confere as parcelas.`,
+        message: `Venda de ${formatBRL(a.totalCents)} fechada. Agora o financeiro confirma as parcelas.`,
         id: (data as { sale_id: string }).sale_id,
       };
     }
@@ -266,7 +266,7 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
       if (r.duplicate)
         return {
           ok: true,
-          message: "Esta venda já tinha sido conferida. Nenhuma parcela nova foi criada.",
+          message: "As parcelas desta venda já tinham sido confirmadas. Nenhuma parcela nova foi criada.",
           id: a.saleId,
           extra: { duplicate: true },
         };

@@ -30,7 +30,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           <div
             key={t.id}
             className={cx(
-              "pointer-events-auto flex max-w-md items-start gap-2 rounded-xl px-4 py-3 text-[15px] font-medium shadow-lg",
+              "pointer-events-auto flex max-w-md items-start gap-2 rounded-xl px-4 py-3 text-base font-medium shadow-lg",
               t.tone === "success" && "bg-money-700 text-white",
               t.tone === "error" && "bg-danger text-white",
               t.tone === "info" && "bg-navy text-white",

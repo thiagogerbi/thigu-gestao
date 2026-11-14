@@ -4,7 +4,7 @@ import { cx } from "@/components/ui/styles";
 import { useId } from "react";
 
 const inputBase =
-  "block w-full min-h-11 rounded-lg border bg-white px-3 text-[15px] text-ink placeholder:text-[#6b7585] focus:border-primary focus:outline-none focus:ring-3 focus:ring-primary/20 disabled:bg-canvas";
+  "block w-full min-h-11 rounded-lg border bg-white px-3 text-base text-ink placeholder:text-[#6b7585] focus:border-primary focus:outline-none focus:ring-3 focus:ring-primary/20 disabled:bg-canvas";
 
 function describedBy(id: string, hint?: React.ReactNode, error?: string | null) {
   return [hint ? `${id}-hint` : null, error ? `${id}-error` : null].filter(Boolean).join(" ") || undefined;
@@ -35,12 +35,12 @@ export function FieldShell({
       </label>
       {children}
       {hint && !error && (
-        <p id={`${id}-hint`} className="mt-1 text-[13px] text-muted">
+        <p id={`${id}-hint`} className="mt-1 text-sm text-muted">
           {hint}
         </p>
       )}
       {error && (
-        <p id={`${id}-error`} className="mt-1 flex items-start gap-1 text-[13px] font-medium text-danger">
+        <p id={`${id}-error`} className="mt-1 flex items-start gap-1 text-sm font-medium text-danger">
           <IconAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           {error}
         </p>

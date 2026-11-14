@@ -48,7 +48,7 @@ export function ProposalScreen({ proposalId }: { proposalId: string }) {
     { label: "Enviada", done: p.status !== "rascunho" },
     { label: "Aceita pelo cliente", done: p.status === "aceita" },
     { label: "Venda fechada", done: Boolean(sale) },
-    { label: "Parcelas conferidas", done: sale?.status === "confirmada" },
+    { label: "Parcelas confirmadas", done: sale?.status === "confirmada" },
   ];
 
   return (
@@ -89,7 +89,7 @@ export function ProposalScreen({ proposalId }: { proposalId: string }) {
             </Button>
           )}
           {editable && p.status === "enviada" && (
-            <Button onClick={() => dialogs.open({ kind: "acceptProposal", proposalId: p.id })}>
+            <Button data-tour="aceite" onClick={() => dialogs.open({ kind: "acceptProposal", proposalId: p.id })}>
               <IconCheck className="h-5 w-5" /> Registrar aceite do cliente
             </Button>
           )}
@@ -103,7 +103,7 @@ export function ProposalScreen({ proposalId }: { proposalId: string }) {
           )}
           {sale?.status === "aguardando_conferencia" && (
             <Button variant="secondary" onClick={() => dialogs.open({ kind: "reviewSale", saleId: sale.id })}>
-              Ver conferência das parcelas
+              Ver confirmação das parcelas
             </Button>
           )}
         </div>
@@ -142,7 +142,7 @@ export function ProposalScreen({ proposalId }: { proposalId: string }) {
           </div>
           <div className="text-right">
             <h1 className="font-display text-2xl font-bold">Proposta comercial nº {p.number}</h1>
-            <p className="text-sm text-muted">Emitida em {formatDateBR(p.createdAt.slice(0, 10))}</p>
+            <p className="text-sm text-muted">Emitida em {formatDateBR(p.createdAt)}</p>
             <div className="mt-1 print:hidden">
               <Badge
                 tone={
@@ -199,7 +199,7 @@ export function ProposalScreen({ proposalId }: { proposalId: string }) {
               </li>
             ))}
           </ul>
-          <dl className="ml-auto mt-3 grid max-w-xs gap-1 text-[15px] tabular">
+          <dl className="ml-auto mt-3 grid max-w-xs gap-1 text-base tabular">
             <div className="flex justify-between">
               <dt>Subtotal</dt>
               <dd>{formatBRL(subtotal)}</dd>

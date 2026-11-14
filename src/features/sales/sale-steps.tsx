@@ -4,7 +4,7 @@ import { cx } from "@/components/ui/styles";
 
 const STEPS = [
   { title: "Venda fechada", who: "Vendedor" },
-  { title: "Conferir parcelas", who: "Financeiro" },
+  { title: "Confirmar parcelas", who: "Financeiro" },
   { title: "Acompanhar recebimentos", who: "Financeiro" },
 ];
 
@@ -19,7 +19,7 @@ export function SaleSteps({ current, doneUpTo }: { current: number; doneUpTo: nu
             key={s.title}
             aria-current={active ? "step" : undefined}
             className={cx(
-              "rounded-lg border px-2.5 py-2 text-[13px]",
+              "rounded-lg border px-2.5 py-2 text-sm",
               done ? "border-[#bfe8d8] bg-money-50" : active ? "border-primary bg-primary-50" : "border-line bg-white",
             )}
           >

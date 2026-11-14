@@ -81,9 +81,11 @@ export function CloseSaleDialog({
           iCanReview ? (
             <>
               <Button variant="secondary" onClick={onClose}>
-                Conferir depois
+                Confirmar depois
               </Button>
-              <Button onClick={() => open({ kind: "reviewSale", saleId: done.saleId })}>Conferir parcelas agora</Button>
+              <Button onClick={() => open({ kind: "reviewSale", saleId: done.saleId })}>
+                Confirmar parcelas agora
+              </Button>
             </>
           ) : (
             <Button onClick={onClose}>Entendi</Button>
@@ -92,9 +94,9 @@ export function CloseSaleDialog({
       >
         <SaleSteps current={1} doneUpTo={1} />
         <InlineAlert tone="green" title={`Venda de ${formatBRL(totalCents)} para ${client?.name} fechada.`}>
-          Próximo passo: <strong>conferir as parcelas</strong>. Quem faz:{" "}
-          {reviewers.map((m) => m.name).join(", ") || "o financeiro"}. Até lá, o valor aparece como “aguardando
-          conferência” e ainda não entra em contas a receber.
+          Próximo passo: <strong>confirmar as parcelas</strong>. Quem faz:{" "}
+          {reviewers.map((m) => m.name).join(", ") || "o financeiro"}. Até lá, o valor ainda não entra em “Falta
+          receber”.
         </InlineAlert>
       </Modal>
     );

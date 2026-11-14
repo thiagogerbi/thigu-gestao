@@ -28,6 +28,10 @@ describe("dinheiro", () => {
 
 describe("datas", () => {
   it("formata no padrão brasileiro", () => expect(formatDateBR("2026-11-06")).toBe("06/11/2026"));
+  it("data com horário usa o dia local (22h não vira o dia seguinte)", () => {
+    const lateNight = new Date(2026, 10, 13, 22, 30).toISOString();
+    expect(formatDateBR(lateNight)).toBe("13/11/2026");
+  });
   it("soma meses sem pular para o mês seguinte", () => {
     expect(addMonths("2026-01-31", 1)).toBe("2026-02-28");
     expect(addMonths("2026-11-06", 2)).toBe("2027-01-06");
