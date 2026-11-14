@@ -61,7 +61,7 @@ export function AcceptProposalDialog({ onClose, proposalId, open }: DialogProps 
               type="checkbox"
               checked={updateValue}
               onChange={(e) => setUpdateValue(e.target.checked)}
-              className="mt-1 h-4 w-4 accent-[#3563E9]"
+              className="mt-1 h-4 w-4 accent-primary"
             />
             <span>
               <span className="block font-semibold">Atualizar o valor da negociação para {formatBRL(total)}</span>

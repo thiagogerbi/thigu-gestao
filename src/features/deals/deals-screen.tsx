@@ -161,7 +161,7 @@ export function DealsScreen() {
               type="checkbox"
               checked={onlyStale}
               onChange={(e) => nav.setQuery({ filtro: e.target.checked ? "paradas" : null })}
-              className="h-4 w-4 accent-[#3563E9]"
+              className="h-4 w-4 accent-primary"
             />
             Somente paradas
           </label>

@@ -36,9 +36,11 @@ export function RealBackend({
     async (action: Action) => {
       const { result, data: fresh } = await runAction(data.company.id, action);
       if (fresh) setData(fresh);
+      // o nome da empresa também aparece no seletor "Minha empresa", que vem do servidor
+      if (result.ok && action.type === "company.saveProfile") router.refresh();
       return result;
     },
-    [data.company.id],
+    [data.company.id, router],
   );
 
   const value: BackendValue = useMemo(

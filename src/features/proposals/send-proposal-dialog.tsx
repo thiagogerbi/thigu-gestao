@@ -54,7 +54,7 @@ export function SendProposalDialog({ onClose, proposalId }: DialogProps & { prop
             type="checkbox"
             checked={followUp}
             onChange={(e) => setFollowUp(e.target.checked)}
-            className="mt-1 h-4 w-4 accent-[#3563E9]"
+            className="mt-1 h-4 w-4 accent-primary"
           />
           <span>
             <span className="block font-semibold">Criar tarefa de retorno para {formatDateBR(addDays(today, 2))}</span>

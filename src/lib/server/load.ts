@@ -43,7 +43,11 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
   const q = (t: string, cols = "*") => sb.from(t).select(cols).eq("company_id", companyId);
   const [company, members, clients, deals, tasks, notes, proposals, sales, accounts, movements, activities] =
     await Promise.all([
-      sb.from("companies").select("id, name").eq("id", companyId).single(),
+      sb
+        .from("companies")
+        .select("id, name, legal_name, document, phone, email, address, default_terms, logo_data_url, brand_color")
+        .eq("id", companyId)
+        .single(),
       q("memberships", "user_id, roles, active, profiles(full_name, email)").eq("active", true),
       q("clients").order("name"),
       q("deals"),
@@ -59,9 +63,21 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
     if (r.error) throw r.error;
   }
   const rows = (r: { data: unknown }) => (r.data ?? []) as Row[];
+  const co = company.data as Row;
 
   return {
-    company: { id: (company.data as Row).id, name: (company.data as Row).name },
+    company: {
+      id: co.id,
+      name: co.name,
+      legalName: co.legal_name ?? "",
+      document: co.document ?? "",
+      phone: co.phone ?? "",
+      email: co.email ?? "",
+      address: co.address ?? "",
+      defaultTerms: co.default_terms ?? "",
+      logoDataUrl: co.logo_data_url ?? null,
+      brandColor: co.brand_color ?? null,
+    },
     members: rows(members).map((m): Member => ({
       userId: m.user_id,
       name: m.profiles?.full_name ?? "Usuário",

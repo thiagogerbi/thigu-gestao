@@ -365,4 +365,32 @@ describe("caso de aceitação no banco", () => {
       expect(upd.affectedRows ?? 0).toBe(0);
     });
   });
+  it("dados da empresa: só o administrador altera, e só as colunas permitidas", async () => {
+    await as(U.ana, async () => {
+      await db.query(
+        "update companies set legal_name = 'Aurora Ltda.', document = '12ABC34501DE35', brand_color = '#0f766e', logo_data_url = 'data:image/png;base64,iVBORw0KGgo=' where id = $1",
+        [A],
+      );
+      // created_by não pode ser trocado pelo administrador
+      await expect(db.query("update companies set created_by = $2 where id = $1", [A, U.outro])).rejects.toThrow();
+      // formatos inválidos barrados pelo banco
+      await expect(db.query("update companies set brand_color = 'red' where id = $1", [A])).rejects.toThrow();
+      await expect(
+        db.query("update companies set logo_data_url = 'data:image/svg+xml;base64,PHN2Zz4=' where id = $1", [A]),
+      ).rejects.toThrow();
+      await expect(db.query("update companies set document = '12.345' where id = $1", [A])).rejects.toThrow();
+    });
+    await as(U.vend, async () => {
+      const upd = await db.query("update companies set name = 'Invadida' where id = $1", [A]);
+      expect(upd.affectedRows ?? 0).toBe(0);
+    });
+    await as(U.outro, async () => {
+      expect(await rows("select * from companies where id = $1", [A])).toHaveLength(0);
+    });
+    const co = await one<{ name: string; legal_name: string; brand_color: string }>(
+      "select name, legal_name, brand_color from companies where id = $1",
+      [A],
+    );
+    expect(co).toMatchObject({ name: "Aurora Estúdio", legal_name: "Aurora Ltda.", brand_color: "#0f766e" });
+  });
 });

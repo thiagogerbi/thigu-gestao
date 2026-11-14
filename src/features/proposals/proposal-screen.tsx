@@ -5,6 +5,7 @@ import { Button, LinkButton } from "@/components/ui/button";
 import { Badge, EmptyState } from "@/components/ui/card";
 import { IconArrowLeft, IconCheck, IconPrinter } from "@/components/ui/icons";
 import { cx } from "@/components/ui/styles";
+import { CompanyLetterhead } from "@/features/company/company-letterhead";
 import { formatDateBR } from "@/lib/domain/dates";
 import { formatBRL } from "@/lib/domain/money";
 import { canEditDeal } from "@/lib/domain/permissions";
@@ -136,9 +137,9 @@ export function ProposalScreen({ proposalId }: { proposalId: string }) {
         aria-label={`Proposta comercial nº ${p.number}`}
       >
         <header className="mb-8 flex flex-wrap items-start justify-between gap-4 border-b border-line pb-6">
-          <div>
-            <p className="font-display text-xl font-extrabold text-navy">{data.company.name}</p>
-            <p className="text-sm text-muted">Responsável: {deal ? name(deal.ownerId) : "—"}</p>
+          <div className="min-w-0">
+            <CompanyLetterhead company={data.company} />
+            <p className="mt-2 text-sm text-muted">Responsável: {deal ? name(deal.ownerId) : "—"}</p>
           </div>
           <div className="text-right">
             <h1 className="font-display text-2xl font-bold">Proposta comercial nº {p.number}</h1>

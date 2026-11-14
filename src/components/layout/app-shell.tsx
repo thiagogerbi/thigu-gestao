@@ -9,6 +9,7 @@ import { cx } from "@/components/ui/styles";
 import { ToastProvider } from "@/components/ui/toast";
 import { ClientDrawer } from "@/features/clients/client-drawer";
 import { PreviewTour } from "@/features/tour/preview-tour";
+import { brandCss } from "@/lib/domain/branding";
 import { can, usesCrm } from "@/lib/domain/permissions";
 import { ROLE_LABEL, type Role } from "@/lib/domain/types";
 import { useBackend } from "@/state/backend-context";
@@ -79,6 +80,29 @@ function CompanySwitcher({ dark }: { dark?: boolean }) {
   );
 }
 
+/** Logotipo da empresa no menu, sobre fundo branco para funcionar com qualquer imagem. */
+function CompanyLogo() {
+  const { data } = useBackend();
+  if (!data.company.logoDataUrl) return null;
+  return (
+    <div className="mb-3 flex h-16 items-center justify-center rounded-lg bg-white p-2">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={data.company.logoDataUrl}
+        alt={`Logotipo de ${data.company.name}`}
+        className="max-h-full max-w-full object-contain"
+      />
+    </div>
+  );
+}
+
+/** Troca os tons de ação do tema pela cor da empresa (vale também para janelas abertas fora do menu). */
+function BrandTheme() {
+  const { data } = useBackend();
+  const css = brandCss(data.company.brandColor);
+  return css ? <style>{css}</style> : null;
+}
+
 function Sidebar() {
   const { me, basePath, signOut } = useBackend();
   const pathname = usePathname();
@@ -89,6 +113,7 @@ function Sidebar() {
         <ThiguLogo dark />
       </Link>
       <div className="mb-5">
+        <CompanyLogo />
         <CompanySwitcher dark />
       </div>
       <nav aria-label="Menu principal" className="flex-1">
@@ -268,6 +293,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <ToastProvider>
       <Suspense>
         <DialogHost>
+          <BrandTheme />
           <a
             href="#conteudo"
             className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[80] focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:shadow-lg"

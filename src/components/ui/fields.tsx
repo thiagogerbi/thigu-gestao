@@ -197,7 +197,7 @@ export function ChoiceCards<T extends string>({
               value={o.value}
               checked={value === o.value}
               onChange={() => onChange(o.value)}
-              className="mt-1 h-4 w-4 accent-[#3563E9]"
+              className="mt-1 h-4 w-4 accent-primary"
             />
             <span>
               <span className="block font-semibold">{o.label}</span>

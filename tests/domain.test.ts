@@ -2,6 +2,16 @@ import { accountStatus, balanceCents, validateSettlement } from "@/lib/domain/ac
 import { addMonths, formatDateBR } from "@/lib/domain/dates";
 import { buildPlan, checkPlan, splitEvenly } from "@/lib/domain/installments";
 import { formatBRL, parseBRLToCents } from "@/lib/domain/money";
+import {
+  brandCss,
+  brandPalette,
+  BRAND_PRESETS,
+  contrastRatio,
+  fitLogo,
+  MIN_CONTRAST,
+  THIGU_BLUE,
+} from "@/lib/domain/branding";
+import { formatDocument, isValidCNPJ, isValidCPF, isValidDocument, normalizeDocument } from "@/lib/domain/document";
 import { can } from "@/lib/domain/permissions";
 import { hasProposalErrors, proposalTotalCents, validateProposal } from "@/lib/domain/proposals";
 import type { Account, Movement } from "@/lib/domain/types";
@@ -134,5 +144,57 @@ describe("permissões", () => {
     expect(can(["financeiro"], "venda.conferir")).toBe(true);
     expect(can(["admin"], "venda.conferir")).toBe(true);
     expect(can(["vendedor", "financeiro"], "financeiro.registrar")).toBe(true);
+  });
+});
+
+describe("identidade da empresa", () => {
+  it("cores sugeridas já são legíveis com texto branco", () => {
+    for (const p of BRAND_PRESETS) {
+      expect(contrastRatio(p.hex, "#ffffff")).toBeGreaterThanOrEqual(MIN_CONTRAST);
+      expect(brandPalette(p.hex).adjusted).toBe(false);
+    }
+  });
+  it("escurece cores claras até o texto branco ficar legível, mantendo os tons derivados legíveis", () => {
+    for (const hex of ["#ffeb3b", "#7dd3fc", "#ffffff", "#22c55e"]) {
+      const p = brandPalette(hex);
+      expect(p.adjusted).toBe(true);
+      expect(contrastRatio(p.primary, "#ffffff")).toBeGreaterThanOrEqual(MIN_CONTRAST);
+      expect(contrastRatio(p.primary700, p.primary50)).toBeGreaterThanOrEqual(MIN_CONTRAST);
+    }
+  });
+  it("só gera CSS a partir de cor válida e não mexe no tema padrão", () => {
+    expect(brandCss(null)).toBeNull();
+    expect(brandCss(THIGU_BLUE)).toBeNull();
+    expect(brandCss("red;}body{display:none")).toBeNull();
+    expect(brandCss("#0f766e")).toContain("--color-primary:#0f766e");
+  });
+  it("reduz o logotipo mantendo a proporção e sem ampliar", () => {
+    expect(fitLogo(1200, 400)).toEqual({ width: 600, height: 200 });
+    expect(fitLogo(500, 500)).toEqual({ width: 240, height: 240 });
+    expect(fitLogo(120, 40)).toEqual({ width: 120, height: 40 });
+  });
+});
+
+describe("CPF e CNPJ", () => {
+  it("valida CPF", () => {
+    expect(isValidCPF("529.982.247-25")).toBe(true);
+    expect(isValidCPF("529.982.247-24")).toBe(false);
+    expect(isValidCPF("111.111.111-11")).toBe(false);
+  });
+  it("valida CNPJ numérico e o novo alfanumérico", () => {
+    expect(isValidCNPJ("12.345.678/0001-95")).toBe(true);
+    expect(isValidCNPJ("12.345.678/0001-96")).toBe(false);
+    // exemplo publicado pela Receita Federal
+    expect(isValidCNPJ("12.ABC.345/01DE-35")).toBe(true);
+    expect(isValidCNPJ("12.abc.345/01de-35")).toBe(true);
+    expect(isValidCNPJ("12.ABC.345/01DE-36")).toBe(false);
+    expect(isValidCNPJ("00.000.000/0000-00")).toBe(false);
+  });
+  it("aceita vazio, normaliza e formata", () => {
+    expect(isValidDocument("")).toBe(true);
+    expect(isValidDocument("123")).toBe(false);
+    expect(normalizeDocument("12.abc.345/01de-35")).toBe("12ABC34501DE35");
+    expect(formatDocument("12ABC34501DE35")).toBe("12.ABC.345/01DE-35");
+    expect(formatDocument("52998224725")).toBe("529.982.247-25");
   });
 });

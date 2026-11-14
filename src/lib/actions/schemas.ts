@@ -1,4 +1,6 @@
+import { LOGO_DATA_URL_RE, LOGO_MAX_CHARS } from "@/lib/domain/branding";
 import { isISODate } from "@/lib/domain/dates";
+import { isValidDocument, normalizeDocument } from "@/lib/domain/document";
 import { z } from "zod";
 
 /**
@@ -29,6 +31,30 @@ export const methodSchema = z.enum([
 ]);
 
 export const actionSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("company.saveProfile"),
+    name: text(120).min(2, "Digite o nome da empresa (pelo menos 2 letras)."),
+    legalName: text(160),
+    document: z
+      .string()
+      .max(30)
+      .transform(normalizeDocument)
+      .refine(isValidDocument, "CNPJ ou CPF inválido. Confira os números (ou deixe em branco)."),
+    phone: text(30),
+    email: z.union([z.literal(""), z.string().trim().email("E-mail inválido. Exemplo: contato@empresa.com.br")]),
+    address: text(300),
+    defaultTerms: text(2000),
+    logoDataUrl: z
+      .string()
+      .max(LOGO_MAX_CHARS, "A imagem ficou grande demais. Tente um arquivo menor.")
+      .regex(LOGO_DATA_URL_RE, "Use uma imagem PNG, JPG ou WebP.")
+      .nullable(),
+    brandColor: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/, "Cor inválida.")
+      .transform((v) => v.toLowerCase())
+      .nullable(),
+  }),
   z.object({
     type: z.literal("client.save"),
     id: id.optional(),

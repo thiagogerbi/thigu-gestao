@@ -21,7 +21,7 @@ export function Card({
 type Tone = "neutral" | "blue" | "green" | "amber" | "red" | "gray" | "navy";
 const TONE: Record<Tone, string> = {
   neutral: "bg-canvas text-ink border-line",
-  blue: "bg-primary-50 text-primary-700 border-[#cddbfb]",
+  blue: "bg-primary-50 text-primary-700 border-primary/25",
   green: "bg-money-50 text-money-700 border-[#bfe8d8]",
   amber: "bg-warn-50 text-warn border-[#f5d9a8]",
   red: "bg-danger-50 text-danger border-[#f7c9c4]",
@@ -100,7 +100,7 @@ export function InlineAlert({
   const map = {
     red: "border-[#f7c9c4] bg-danger-50 text-danger",
     amber: "border-[#f5d9a8] bg-warn-50 text-warn",
-    blue: "border-[#cddbfb] bg-primary-50 text-primary-700",
+    blue: "border-primary/25 bg-primary-50 text-primary-700",
     green: "border-[#bfe8d8] bg-money-50 text-money-700",
   };
   return (

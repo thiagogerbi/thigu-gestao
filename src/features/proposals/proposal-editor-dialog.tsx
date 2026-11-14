@@ -64,7 +64,9 @@ export function ProposalDialog({
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [discount, setDiscount] = useState(existing ? centsToInput(existing.discountCents) : "");
   const [validUntil, setValidUntil] = useState(existing?.validUntil ?? addDays(today, 15));
-  const [terms, setTerms] = useState(existing?.terms ?? "Pagamento: a combinar.\nPrazo de entrega: a combinar.");
+  const [terms, setTerms] = useState(
+    existing?.terms ?? (data.company.defaultTerms || "Pagamento: a combinar.\nPrazo de entrega: a combinar."),
+  );
   const [errs, setErrs] = useState<ProposalErrors>({ rows: {} });
   const [dealErr, setDealErr] = useState<string | null>(null);
   const formId = useId();

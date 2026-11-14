@@ -1,6 +1,8 @@
 "use client";
 
 import { Badge, Card, InlineAlert, PageHeader } from "@/components/ui/card";
+import { CompanyLetterhead } from "@/features/company/company-letterhead";
+import { CompanyProfileForm } from "@/features/company/company-profile-form";
 import { ROLE_LABEL, type Role } from "@/lib/domain/types";
 import { useBackend, useCan } from "@/state/backend-context";
 
@@ -19,7 +21,7 @@ export function CompanyScreen({ manager }: { manager?: React.ReactNode }) {
     <>
       <PageHeader
         title="Minha empresa"
-        description={`${data.company.name} · quem faz parte e o que cada pessoa pode fazer.`}
+        description={`${data.company.name} · dados que aparecem nas propostas, aparência e quem faz parte da equipe.`}
       />
       {mode === "previa" && (
         <div className="mb-4">
@@ -28,6 +30,15 @@ export function CompanyScreen({ manager }: { manager?: React.ReactNode }) {
             fictícios.
           </InlineAlert>
         </div>
+      )}
+      {canDo("empresa.gerenciar") ? (
+        <CompanyProfileForm />
+      ) : (
+        <Card className="mb-6 p-4">
+          <h2 className="mb-3 font-display text-lg font-bold">Dados da empresa</h2>
+          <CompanyLetterhead company={data.company} />
+          <p className="mt-3 text-sm text-muted">Somente o administrador altera estes dados.</p>
+        </Card>
       )}
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <Card className="p-4">

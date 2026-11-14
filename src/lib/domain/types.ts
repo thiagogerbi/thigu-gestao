@@ -16,6 +16,33 @@ export interface Company {
   name: string;
 }
 
+/** Dados da empresa que aparecem na proposta, mais a identidade visual (logotipo e cor). */
+export interface CompanyProfile extends Company {
+  legalName: string;
+  /** CPF ou CNPJ sem pontuação (vazio quando não informado). */
+  document: string;
+  phone: string;
+  email: string;
+  address: string;
+  /** Texto que já vem preenchido em "Condições comerciais" ao criar uma proposta. */
+  defaultTerms: string;
+  /** data:image/png|webp|jpeg;base64,… ou null. */
+  logoDataUrl: string | null;
+  /** #rrggbb escolhido pela empresa, ou null para o azul Thigu. */
+  brandColor: string | null;
+}
+
+export const EMPTY_PROFILE: Omit<CompanyProfile, "id" | "name"> = {
+  legalName: "",
+  document: "",
+  phone: "",
+  email: "",
+  address: "",
+  defaultTerms: "",
+  logoDataUrl: null,
+  brandColor: null,
+};
+
 export interface Member {
   userId: string;
   name: string;
@@ -170,7 +197,7 @@ export interface Activity {
 
 /** Tudo o que o usuário pode ver de uma empresa (já filtrado por permissões na versão real). */
 export interface CompanyData {
-  company: Company;
+  company: CompanyProfile;
   members: Member[];
   clients: Client[];
   deals: Deal[];

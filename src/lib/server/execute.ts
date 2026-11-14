@@ -49,6 +49,28 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
       .insert({ company_id: companyId, client_id: clientId, deal_id: dealId, kind, description, actor_id: userId });
 
   switch (a.type) {
+    case "company.saveProfile": {
+      if (!need("empresa.gerenciar")) return fail("Somente o administrador altera os dados da empresa.");
+      const { data, error } = await sb
+        .from("companies")
+        .update({
+          name: a.name,
+          legal_name: a.legalName,
+          document: a.document,
+          phone: a.phone,
+          email: a.email,
+          address: a.address,
+          default_terms: a.defaultTerms,
+          logo_data_url: a.logoDataUrl,
+          brand_color: a.brandColor,
+        })
+        .eq("id", companyId)
+        .select("id");
+      if (error) return dbFail(error);
+      if (!data?.length) return fail("Somente o administrador altera os dados da empresa.");
+      return { ok: true, message: "Dados da empresa salvos." };
+    }
+
     case "client.save": {
       if (!need("crm.editar_proprios")) return fail(NO_PERMISSION);
       if (!canAssignOthers(roles) && a.ownerId !== userId)

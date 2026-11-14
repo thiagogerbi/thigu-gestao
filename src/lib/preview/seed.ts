@@ -3,7 +3,17 @@
  * As datas são calculadas a partir de "hoje" para que a prévia pareça sempre atual.
  */
 import { addDays, toISODate } from "@/lib/domain/dates";
-import type { Account, CompanyData, Deal, Member, Movement, Proposal, Sale, Task } from "@/lib/domain/types";
+import {
+  EMPTY_PROFILE,
+  type Account,
+  type CompanyData,
+  type Deal,
+  type Member,
+  type Movement,
+  type Proposal,
+  type Sale,
+  type Task,
+} from "@/lib/domain/types";
 
 export const PREVIEW_COMPANY_IDS = { aurora: "empresa-aurora", horizonte: "empresa-horizonte" } as const;
 
@@ -464,7 +474,18 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
   ];
 
   const aurora: CompanyData = {
-    company: { id: PREVIEW_COMPANY_IDS.aurora, name: "Aurora Estúdio" },
+    company: {
+      ...EMPTY_PROFILE,
+      id: PREVIEW_COMPANY_IDS.aurora,
+      name: "Aurora Estúdio",
+      legalName: "Aurora Estúdio de Design Ltda.",
+      // CNPJ fictício, com dígitos verificadores válidos
+      document: "12345678000195",
+      phone: "(11) 4002-8922",
+      email: "contato@aurora.exemplo",
+      address: "Rua das Flores, 123 — Vila Madalena, São Paulo/SP",
+      defaultTerms: "Pagamento: 50% na aprovação e 50% na entrega.\nPrazo de entrega: 15 dias úteis.",
+    },
     members: auroraMembers,
     clients,
     deals,
@@ -479,7 +500,7 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
 
   // ---------- Horizonte Serviços (empresa nova, para testar o primeiro uso) ----------
   const horizonte: CompanyData = {
-    company: { id: PREVIEW_COMPANY_IDS.horizonte, name: "Horizonte Serviços" },
+    company: { ...EMPTY_PROFILE, id: PREVIEW_COMPANY_IDS.horizonte, name: "Horizonte Serviços" },
     members: [
       { userId: "u-ana", name: "Ana Souza", email: "ana@horizonte.exemplo", roles: ["admin"] },
       { userId: "u-eduardo", name: "Eduardo Pires", email: "eduardo@horizonte.exemplo", roles: ["vendedor"] },

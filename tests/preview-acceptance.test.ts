@@ -198,3 +198,42 @@ describe("caso de aceitação (prévia)", () => {
     expect(t.dealId).toBe("d-joao-cardapio");
   });
 });
+
+describe("dados e aparência da empresa (prévia)", () => {
+  const profile = {
+    type: "company.saveProfile",
+    name: "Horizonte Serviços",
+    legalName: "Horizonte Serviços Ltda.",
+    document: "12.ABC.345/01de-35",
+    phone: "(11) 99999-0000",
+    email: "contato@horizonte.exemplo",
+    address: "Av. Brasil, 100",
+    defaultTerms: "Pagamento em 30 dias.",
+    logoDataUrl: "data:image/png;base64,iVBORw0KGgo=",
+    brandColor: "#0F766E",
+  };
+
+  it("administrador salva; CNPJ e cor são normalizados", () => {
+    const { horizonte, dono } = setup();
+    const r = applyAction(horizonte, dono, profile, ctx());
+    expect(r.result.ok).toBe(true);
+    expect(r.data.company).toMatchObject({
+      id: horizonte.company.id,
+      legalName: "Horizonte Serviços Ltda.",
+      document: "12ABC34501DE35",
+      brandColor: "#0f766e",
+      defaultTerms: "Pagamento em 30 dias.",
+    });
+  });
+
+  it("outros papéis não alteram; dados inválidos são recusados com o campo indicado", () => {
+    const { horizonte, vendedor, dono } = setup();
+    expect(applyAction(horizonte, vendedor, profile, ctx()).result.ok).toBe(false);
+    const badDoc = applyAction(horizonte, dono, { ...profile, document: "12.345.678/0001-00" }, ctx()).result;
+    expect(badDoc.ok).toBe(false);
+    expect(!badDoc.ok && badDoc.fieldErrors?.document).toBeTruthy();
+    const svg = applyAction(horizonte, dono, { ...profile, logoDataUrl: "data:image/svg+xml;base64,PHN2Zz4=" }, ctx());
+    expect(svg.result.ok).toBe(false);
+    expect(applyAction(horizonte, dono, { ...profile, brandColor: "red" }, ctx()).result.ok).toBe(false);
+  });
+});

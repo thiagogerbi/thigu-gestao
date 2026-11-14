@@ -50,7 +50,7 @@ export function MembersManager() {
                 <label key={r} className="flex min-h-9 items-center gap-2 rounded-full border border-line px-3 text-sm">
                   <input
                     type="checkbox"
-                    className="h-4 w-4 accent-[#3563E9]"
+                    className="h-4 w-4 accent-primary"
                     checked={m.roles.includes(r)}
                     onChange={() => {
                       const next = toggle(r, m.roles);
@@ -93,7 +93,7 @@ export function MembersManager() {
             >
               <input
                 type="checkbox"
-                className="h-4 w-4 accent-[#3563E9]"
+                className="h-4 w-4 accent-primary"
                 checked={roles.includes(r)}
                 onChange={() => setRoles(toggle(r, roles))}
               />

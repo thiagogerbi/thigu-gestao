@@ -64,6 +64,13 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
   const findVisibleDeal = (id: string) => visible.deals.find((x) => x.id === id) && d.deals.find((x) => x.id === id);
 
   switch (a.type) {
+    case "company.saveProfile": {
+      if (!can(roles, "empresa.gerenciar")) return fail("Somente o administrador altera os dados da empresa.");
+      const { type: _type, ...profile } = a;
+      Object.assign(d.company, profile);
+      return { ok: true, message: "Dados da empresa salvos." };
+    }
+
     case "client.save": {
       if (!isMember(a.ownerId))
         return fail("Escolha um responsável que faça parte da empresa.", { ownerId: "Responsável inválido." });
