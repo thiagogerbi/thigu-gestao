@@ -1,4 +1,4 @@
-import type { Client, Deal, Role } from "@/lib/domain/types";
+import type { Client, Deal, Resource, Role } from "@/lib/domain/types";
 
 /**
  * Matriz de permissões usada pela interface (para mostrar o que faz sentido)
@@ -20,7 +20,11 @@ export type Capability =
   | "venda.conferir" // conferir venda e criar contas a receber
   | "financeiro.ver" // ver contas a receber/pagar e caixa
   | "financeiro.registrar" // registrar recebimentos/pagamentos, despesas, cancelar e desfazer
-  | "recebiveis.ver_proprios"; // vendedor acompanha parcelas das próprias vendas (somente leitura)
+  | "recebiveis.ver_proprios" // vendedor acompanha parcelas das próprias vendas (somente leitura)
+  | "agenda.todas" // ver e marcar na agenda de todos
+  | "agenda.propria" // ver e marcar só nas agendas ligadas à própria pessoa
+  | "agenda.configurar" // cadastrar serviços e quem atende
+  | "prontuario.escrever"; // escrever e ler as próprias anotações de atendimento
 
 const ALL_CLIENTS: Capability[] = ["clientes.ver_todos", "clientes.editar_todos", "clientes.editar_proprios"];
 
@@ -36,6 +40,8 @@ const MATRIX: Record<Role, Capability[]> = {
     "financeiro.ver",
     "financeiro.registrar",
     "recebiveis.ver_proprios",
+    "agenda.todas",
+    "agenda.configurar",
   ],
   gestor: [
     ...ALL_CLIENTS,
@@ -44,12 +50,15 @@ const MATRIX: Record<Role, Capability[]> = {
     "crm.editar_proprios",
     "venda.fechar",
     "recebiveis.ver_proprios",
+    "agenda.todas",
+    "agenda.configurar",
   ],
   vendedor: ["clientes.editar_proprios", "crm.editar_proprios", "venda.fechar", "recebiveis.ver_proprios"],
   financeiro: ["clientes.ver_todos", "crm.ver_todos", "venda.conferir", "financeiro.ver", "financeiro.registrar"],
-  // Papéis dos ramos com atendimento. Agenda, caixa e ficha de atendimento entram com os próximos módulos.
-  recepcao: ALL_CLIENTS,
-  profissional: ["clientes.editar_proprios"],
+  // Papéis dos ramos com atendimento. O caixa do dia entra com o próximo módulo.
+  recepcao: [...ALL_CLIENTS, "agenda.todas"],
+  // o administrador não lê o prontuário dos outros: quem atende e também é dono acumula "profissional"
+  profissional: ["clientes.editar_proprios", "agenda.propria", "prontuario.escrever"],
   caixa: ALL_CLIENTS,
 };
 
@@ -73,6 +82,20 @@ export function canAssignOthers(roles: readonly Role[]): boolean {
 /** Quem pode escolher outro responsável para um cliente (a recepção cadastra para o profissional). */
 export function canAssignClientOwner(roles: readonly Role[]): boolean {
   return can(roles, "clientes.editar_todos");
+}
+
+/** Agenda: quem marca para todos, ou o profissional nas agendas ligadas a ele. */
+export function canManageResource(
+  roles: readonly Role[],
+  userId: string,
+  resource: Pick<Resource, "userId"> | undefined,
+): boolean {
+  if (!resource) return false;
+  return can(roles, "agenda.todas") || (can(roles, "agenda.propria") && resource.userId === userId);
+}
+
+export function usesAgenda(roles: readonly Role[]): boolean {
+  return can(roles, "agenda.todas") || can(roles, "agenda.propria");
 }
 
 export function usesClients(roles: readonly Role[]): boolean {

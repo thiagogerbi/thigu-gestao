@@ -6,6 +6,7 @@ import { addDays, toISODate } from "@/lib/domain/dates";
 import {
   EMPTY_PROFILE,
   type Account,
+  type Appointment,
   type CompanyData,
   type Deal,
   type Member,
@@ -29,6 +30,26 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     const [y, m, d] = day(n).split("-").map(Number);
     return new Date(y, m - 1, d, hour, 0, 0).toISOString();
   };
+  /** Horário de atendimento: dia relativo a hoje, hora e minuto locais. */
+  const slot = (n: number, hour: number, minute: number, durationMin: number) => {
+    const [y, m, d] = day(n).split("-").map(Number);
+    const start = new Date(y, m - 1, d, hour, minute, 0);
+    return { startsAt: start.toISOString(), endsAt: new Date(start.getTime() + durationMin * 60_000).toISOString() };
+  };
+  const appointment = (
+    p: Pick<Appointment, "id" | "clientId" | "resourceId" | "serviceId" | "priceCents"> &
+      Partial<Appointment> & { startsAt: string; endsAt: string },
+  ): Appointment => ({
+    itemId: null,
+    status: "agendado",
+    notes: "",
+    seriesId: null,
+    accountId: null,
+    remindedAt: null,
+    createdBy: "u-ana",
+    createdAt: at(-10),
+    ...p,
+  });
 
   // ---------- Aurora Estúdio (empresa com dados) ----------
   const auroraMembers: Member[] = [
@@ -495,6 +516,10 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     members: auroraMembers,
     clients,
     items: [],
+    resources: [],
+    services: [],
+    appointments: [],
+    clinicalNotes: [],
     deals,
     tasks,
     notes,
@@ -515,6 +540,10 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     ],
     clients: [],
     items: [],
+    resources: [],
+    services: [],
+    appointments: [],
+    clinicalNotes: [],
     deals: [],
     tasks: [],
     notes: [],
@@ -568,6 +597,121 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     ],
     items: [],
     ...empty(),
+    resources: [
+      { id: "r-helena", name: "Helena Prado", userId: "u-helena", active: true },
+      { id: "r-igor", name: "Igor Batista", userId: "u-igor", active: true },
+    ],
+    services: [
+      { id: "s-psico", name: "Sessão de psicoterapia", durationMin: 50, priceCents: 20000, active: true },
+      { id: "s-nutri", name: "Consulta de nutrição", durationMin: 60, priceCents: 25000, active: true },
+      { id: "s-retorno", name: "Retorno de nutrição", durationMin: 30, priceCents: 12000, active: true },
+    ],
+    appointments: [
+      appointment({
+        id: "ag-1",
+        clientId: "p-beatriz",
+        resourceId: "r-helena",
+        serviceId: "s-psico",
+        priceCents: 20000,
+        ...slot(0, 9, 0, 50),
+        status: "confirmado",
+        seriesId: "serie-beatriz",
+        remindedAt: at(-1, 17),
+      }),
+      appointment({
+        id: "ag-2",
+        clientId: "p-caio",
+        resourceId: "r-helena",
+        serviceId: "s-psico",
+        priceCents: 20000,
+        ...slot(0, 10, 0, 50),
+      }),
+      appointment({
+        id: "ag-3",
+        clientId: "p-denise",
+        resourceId: "r-igor",
+        serviceId: "s-nutri",
+        priceCents: 25000,
+        ...slot(0, 14, 0, 60),
+        createdBy: "u-julia",
+      }),
+      appointment({
+        id: "ag-4",
+        clientId: "p-beatriz",
+        resourceId: "r-helena",
+        serviceId: "s-psico",
+        priceCents: 20000,
+        ...slot(7, 9, 0, 50),
+        seriesId: "serie-beatriz",
+      }),
+      appointment({
+        id: "ag-5",
+        clientId: "p-denise",
+        resourceId: "r-igor",
+        serviceId: "s-retorno",
+        priceCents: 12000,
+        ...slot(1, 16, 0, 30),
+        createdBy: "u-julia",
+      }),
+      appointment({
+        id: "ag-6",
+        clientId: "p-caio",
+        resourceId: "r-helena",
+        serviceId: "s-psico",
+        priceCents: 20000,
+        ...slot(1, 10, 0, 50),
+      }),
+      appointment({
+        id: "ag-7",
+        clientId: "p-caio",
+        resourceId: "r-helena",
+        serviceId: "s-psico",
+        priceCents: 20000,
+        ...slot(-1, 10, 0, 50),
+        status: "compareceu",
+        accountId: "a-atend-caio",
+      }),
+      appointment({
+        id: "ag-8",
+        clientId: "p-denise",
+        resourceId: "r-igor",
+        serviceId: "s-nutri",
+        priceCents: 25000,
+        ...slot(-3, 14, 0, 60),
+        status: "faltou",
+      }),
+    ],
+    accounts: [
+      {
+        id: "a-atend-caio",
+        kind: "receber",
+        clientId: "p-caio",
+        supplier: null,
+        description: "Sessão de psicoterapia",
+        origin: "atendimento",
+        saleId: null,
+        installmentNumber: 1,
+        installmentCount: 1,
+        amountCents: 20000,
+        dueDate: day(-1),
+        category: null,
+        canceledAt: null,
+        canceledBy: null,
+        cancelReason: null,
+        createdAt: at(-1, 11),
+      },
+    ],
+    clinicalNotes: [
+      {
+        id: "cn-1",
+        clientId: "p-caio",
+        appointmentId: "ag-7",
+        authorId: "u-helena",
+        body: "Exemplo fictício: combinamos exercícios de respiração para a semana. Retomar o assunto da escola no próximo encontro.",
+        correctsId: null,
+        createdAt: at(-1, 11),
+      },
+    ],
   };
 
   // ---------- Amigo Fiel Pet Shop (ramo: pet shop ou veterinária) ----------
@@ -625,6 +769,50 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
       },
     ],
     ...empty(),
+    resources: [
+      { id: "r-leandro", name: "Leandro Dias", userId: "u-leandro", active: true },
+      // agenda sem login: quem usa a mesa é a tosadora, que não acessa o sistema
+      { id: "r-mesa2", name: "Mesa de tosa 2", userId: null, active: true },
+    ],
+    services: [
+      { id: "s-banho-p", name: "Banho (porte pequeno)", durationMin: 60, priceCents: 6000, active: true },
+      { id: "s-banho-g", name: "Banho (porte grande)", durationMin: 90, priceCents: 9000, active: true },
+      { id: "s-tosa", name: "Banho e tosa", durationMin: 120, priceCents: 12000, active: true },
+    ],
+    appointments: [
+      appointment({
+        id: "ag-thor",
+        clientId: "t-paula",
+        resourceId: "r-leandro",
+        serviceId: "s-banho-g",
+        itemId: "i-thor",
+        priceCents: 9000,
+        ...slot(0, 10, 0, 90),
+        createdBy: "u-karina",
+      }),
+      appointment({
+        id: "ag-mia",
+        clientId: "t-paula",
+        resourceId: "r-mesa2",
+        serviceId: "s-banho-p",
+        itemId: "i-mia",
+        priceCents: 6000,
+        ...slot(0, 11, 30, 60),
+        createdBy: "u-karina",
+        notes: "Buscar em casa às 11h.",
+      }),
+      appointment({
+        id: "ag-bob",
+        clientId: "t-rogerio",
+        resourceId: "r-leandro",
+        serviceId: "s-tosa",
+        itemId: "i-bob",
+        priceCents: 12000,
+        ...slot(1, 9, 0, 120),
+        createdBy: "u-karina",
+      }),
+    ],
+    clinicalNotes: [],
   };
 
   return [aurora, horizonte, clinica, pet];

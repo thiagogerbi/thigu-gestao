@@ -7,6 +7,8 @@ import { Drawer } from "@/components/ui/overlay";
 import { ClientContact } from "@/features/clients/client-contact";
 import { ClientDealsList } from "@/features/clients/client-deals-list";
 import { ClientHistory, NOTE_FIELD_ID } from "@/features/clients/client-history";
+import { ClientAppointments } from "@/features/clients/client-appointments";
+import { ClientClinicalNotes } from "@/features/clients/client-clinical-notes";
 import { ClientItems } from "@/features/clients/client-items";
 import { ClientNextAction } from "@/features/clients/client-next-action";
 import { ClientProposalsList } from "@/features/clients/client-proposals-list";
@@ -17,9 +19,11 @@ import { formatDateBR } from "@/lib/domain/dates";
 import { isOpenStage } from "@/lib/domain/deals";
 import { formatBRL } from "@/lib/domain/money";
 import { canEditClient, usesCrm } from "@/lib/domain/permissions";
-import { itemKindFor, SEGMENTS } from "@/lib/domain/segments";
+import { dayOf, isOpenStatus } from "@/lib/domain/agenda";
+import { itemKindFor, moduleAvailable, SEGMENTS } from "@/lib/domain/segments";
 import { useBackend, useCan, useMemberName } from "@/state/backend-context";
 import { accountView, clientById } from "@/state/selectors";
+import { useAgenda } from "@/state/use-agenda";
 import { useNav } from "@/state/use-nav";
 import { useTerms } from "@/state/use-terms";
 import { useEffect, useState } from "react";
@@ -59,6 +63,11 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
   const canDeal = canDo("crm.editar_proprios");
   const extraFields = SEGMENTS[data.company.segment].clientFields;
   const itemKind = itemKindFor(data.company);
+  const ag = useAgenda();
+  const showNotes = moduleAvailable(data.company, "prontuario") && canDo("prontuario.escrever");
+  const hasUpcoming = data.appointments.some(
+    (a) => a.clientId === clientId && isOpenStatus(a.status) && dayOf(a) >= today,
+  );
   // o texto da anotação fica aqui porque a ficha avisa antes de fechar com algo não salvo
   const [note, setNote] = useState("");
   const client = clientById(data, clientId)!;
@@ -119,6 +128,13 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
       cta: "Registrar recebimento",
       run: () => dialogs.open({ kind: "settle", accountId: overdue.account.id, accountKind: "receber" }),
       money: true,
+    };
+  } else if (ag.enabled && ag.manageable.length > 0 && !hasUpcoming) {
+    // nos ramos com agenda, o próximo passo natural é marcar o próximo horário
+    suggestion = {
+      text: `Nenhum horário marcado com ${client.name.split(" ")[0]}.`,
+      cta: "Marcar horário",
+      run: () => dialogs.open({ kind: "appointment", clientId }),
     };
   } else if (sentProposal && editable && canDeal) {
     suggestion = {
@@ -235,6 +251,8 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
       </ClientSection>
 
       {itemKind && <ClientItems clientId={clientId} kind={itemKind} editable={editable} />}
+      {ag.enabled && <ClientAppointments clientId={clientId} />}
+      {showNotes && <ClientClinicalNotes clientId={clientId} />}
       <ClientNextAction nextAction={nextAction} tasks={tasks} hasOpenDeals={openDeals.length > 0} />
       <ClientContact client={client} />
       {extraFields.some((f) => client.extra[f.key]) && (

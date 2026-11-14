@@ -129,6 +129,59 @@ export interface ClientItem {
   createdAt: ISODateTime;
 }
 
+/** Quem atende na agenda: uma pessoa da equipe (com login) ou só um nome, como uma sala ou a manicure sem acesso. */
+export interface Resource {
+  id: string;
+  name: string;
+  /** Pessoa da equipe ligada a esta agenda. O profissional vê e marca só nas agendas ligadas a ele. */
+  userId: string | null;
+  active: boolean;
+}
+
+export interface Service {
+  id: string;
+  name: string;
+  durationMin: number;
+  priceCents: number;
+  active: boolean;
+}
+
+export type AppointmentStatus = "agendado" | "confirmado" | "compareceu" | "faltou" | "cancelado";
+
+export interface Appointment {
+  id: string;
+  clientId: string;
+  resourceId: string;
+  serviceId: string | null;
+  /** Pet atendido (ramo pet shop). */
+  itemId: string | null;
+  startsAt: ISODateTime;
+  endsAt: ISODateTime;
+  status: AppointmentStatus;
+  priceCents: number;
+  notes: string;
+  /** Atendimentos que se repetem têm o mesmo identificador de série. */
+  seriesId: string | null;
+  /** Conta a receber criada ao marcar "compareceu" (ou a falta cobrada). */
+  accountId: string | null;
+  /** Quando alguém tocou em "lembrar pelo WhatsApp". */
+  remindedAt: ISODateTime | null;
+  createdBy: string;
+  createdAt: ISODateTime;
+}
+
+/** Evolução escrita pelo profissional. Só quem escreveu lê. Nada é apagado: corrigir cria outra anotação. */
+export interface ClinicalNote {
+  id: string;
+  clientId: string;
+  appointmentId: string | null;
+  authorId: string;
+  body: string;
+  /** Anotação que esta corrige. */
+  correctsId: string | null;
+  createdAt: ISODateTime;
+}
+
 export interface Deal {
   id: string;
   clientId: string;
@@ -217,7 +270,7 @@ export interface Sale {
 }
 
 export type AccountKind = "receber" | "pagar";
-export type AccountOrigin = "venda" | "despesa" | "avulsa";
+export type AccountOrigin = "venda" | "despesa" | "avulsa" | "atendimento";
 
 export interface Account {
   id: string;
@@ -271,6 +324,10 @@ export interface CompanyData {
   members: Member[];
   clients: Client[];
   items: ClientItem[];
+  resources: Resource[];
+  services: Service[];
+  appointments: Appointment[];
+  clinicalNotes: ClinicalNote[];
   deals: Deal[];
   tasks: Task[];
   notes: Note[];

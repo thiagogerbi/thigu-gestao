@@ -8,9 +8,36 @@ import { balanceCents, validateSettlement } from "@/lib/domain/accounts";
 import { addDays, toISODate } from "@/lib/domain/dates";
 import { checkPlan } from "@/lib/domain/installments";
 import { formatBRL } from "@/lib/domain/money";
-import { can, canAssignClientOwner, canAssignOthers, canEditClient, canEditDeal } from "@/lib/domain/permissions";
+import {
+  addMinutes,
+  allowedStatuses,
+  conflictsFor,
+  durationMinutes,
+  isOpenStatus,
+  MODULE_OFF,
+  overlapMessage,
+  seriesStarts,
+  slotError,
+  statusMessage,
+} from "@/lib/domain/agenda";
+import {
+  can,
+  canAssignClientOwner,
+  canAssignOthers,
+  canEditClient,
+  canEditDeal,
+  canManageResource,
+} from "@/lib/domain/permissions";
 import { hasProposalErrors, proposalTotalCents, validateProposal } from "@/lib/domain/proposals";
-import { cleanFields, ITEM_KINDS, itemKindFor, mergeFields, SEGMENTS, termsFor } from "@/lib/domain/segments";
+import {
+  cleanFields,
+  ITEM_KINDS,
+  itemKindFor,
+  mergeFields,
+  moduleEnabled,
+  SEGMENTS,
+  termsFor,
+} from "@/lib/domain/segments";
 import { STAGE_LABEL, type Activity, type CompanyData, type Member } from "@/lib/domain/types";
 import { visibleData } from "@/lib/domain/visibility";
 
@@ -151,6 +178,215 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
       item.active = a.active;
       log("cliente", `${item.name} ${a.active ? "voltou para a ficha" : "arquivado"}`, client.id);
       return { ok: true, message: a.active ? `${item.name} voltou para a ficha.` : `${item.name} arquivado.` };
+    }
+
+    case "service.save": {
+      if (!moduleEnabled(d.company, "servicos")) return fail(MODULE_OFF);
+      if (!can(roles, "agenda.configurar")) return fail("Somente o administrador ou o gestor cadastram serviços.");
+      const values = { name: a.name, durationMin: a.durationMin, priceCents: a.priceCents, active: a.active };
+      if (a.id) {
+        const s = d.services.find((x) => x.id === a.id);
+        if (!s) return fail("Serviço não encontrado.");
+        Object.assign(s, values);
+        return { ok: true, message: `Serviço ${a.name} salvo.`, id: s.id };
+      }
+      const id = ctx.newId();
+      d.services.push({ id, ...values });
+      return { ok: true, message: `Serviço ${a.name} cadastrado.`, id };
+    }
+
+    case "resource.save": {
+      if (!moduleEnabled(d.company, "agenda")) return fail(MODULE_OFF);
+      if (!can(roles, "agenda.configurar")) return fail("Somente o administrador ou o gestor cadastram quem atende.");
+      if (a.userId && !isMember(a.userId))
+        return fail("Escolha alguém da equipe.", { userId: "Pessoa não encontrada na equipe." });
+      if (a.userId && d.resources.some((r) => r.userId === a.userId && r.id !== a.id))
+        return fail("Esta pessoa já tem uma agenda.", { userId: "Esta pessoa já tem uma agenda." });
+      const values = { name: a.name, userId: a.userId, active: a.active };
+      if (a.id) {
+        const r = d.resources.find((x) => x.id === a.id);
+        if (!r) return fail("Agenda não encontrada.");
+        Object.assign(r, values);
+        return { ok: true, message: `Agenda de ${a.name} salva.`, id: r.id };
+      }
+      const id = ctx.newId();
+      d.resources.push({ id, ...values });
+      return { ok: true, message: `Agenda de ${a.name} criada.`, id };
+    }
+
+    case "appointment.save": {
+      if (!moduleEnabled(d.company, "agenda")) return fail(MODULE_OFF);
+      const resource = d.resources.find((r) => r.id === a.resourceId && r.active);
+      if (!resource) return fail("Escolha quem vai atender.", { resourceId: "Escolha quem vai atender." });
+      if (!canManageResource(roles, me, resource)) return fail("Você só pode marcar na sua própria agenda.");
+      const client = findVisibleClient(a.clientId);
+      if (!client) return fail(`Escolha um ${t.cliente} da lista.`, { clientId: `Escolha um ${t.cliente} da lista.` });
+      if (a.serviceId && !d.services.some((s) => s.id === a.serviceId)) return fail("Serviço não encontrado.");
+      if (a.itemId && !d.items.some((i) => i.id === a.itemId && i.clientId === client.id))
+        return fail("Este pet não é deste tutor.", { itemId: "Escolha um pet deste tutor." });
+      const slotErr = slotError(a.startsAt, a.endsAt);
+      if (slotErr) return fail(slotErr, { endsAt: slotErr });
+      const values = {
+        clientId: client.id,
+        resourceId: resource.id,
+        serviceId: a.serviceId,
+        itemId: a.itemId,
+        startsAt: a.startsAt,
+        endsAt: a.endsAt,
+        priceCents: a.priceCents,
+        notes: a.notes,
+      };
+      if (a.id) {
+        const ap = visible.appointments.some((x) => x.id === a.id)
+          ? d.appointments.find((x) => x.id === a.id)
+          : undefined;
+        if (!ap) return fail("Atendimento não encontrado.");
+        if (!isOpenStatus(ap.status)) return fail("Este atendimento já foi encerrado. Desfaça antes de remarcar.");
+        const busy = conflictsFor(d.appointments, { ...values, ignoreId: ap.id }).length;
+        if (busy && !a.allowOverlap)
+          return fail(overlapMessage(1, resource.name), { overlap: overlapMessage(1, resource.name) });
+        Object.assign(ap, values);
+        log("agenda", `Horário remarcado com ${resource.name}`, client.id);
+        return { ok: true, message: "Horário atualizado.", id: ap.id };
+      }
+      const minutes = durationMinutes(a);
+      const slots = seriesStarts(a.startsAt, a.repeat, a.times).map((s) => ({
+        startsAt: s,
+        endsAt: addMinutes(s, minutes),
+      }));
+      const busy = slots.filter((s) => conflictsFor(d.appointments, { resourceId: resource.id, ...s }).length).length;
+      if (busy && !a.allowOverlap)
+        return fail(overlapMessage(busy, resource.name), { overlap: overlapMessage(busy, resource.name) });
+      const seriesId = slots.length > 1 ? ctx.newId() : null;
+      const ids = slots.map((s) => {
+        const id = ctx.newId();
+        d.appointments.push({
+          id,
+          ...values,
+          ...s,
+          status: "agendado",
+          seriesId,
+          accountId: null,
+          remindedAt: null,
+          createdBy: me,
+          createdAt: nowIso,
+        });
+        return id;
+      });
+      log(
+        "agenda",
+        slots.length > 1
+          ? `${slots.length} horários marcados com ${resource.name}`
+          : `Horário marcado com ${resource.name}`,
+        client.id,
+      );
+      return {
+        ok: true,
+        message: slots.length > 1 ? `${slots.length} horários marcados.` : "Horário marcado.",
+        id: ids[0],
+      };
+    }
+
+    case "appointment.setStatus": {
+      const ap = visible.appointments.some((x) => x.id === a.id)
+        ? d.appointments.find((x) => x.id === a.id)
+        : undefined;
+      if (!ap) return fail("Atendimento não encontrado.");
+      if (
+        !canManageResource(
+          roles,
+          me,
+          d.resources.find((r) => r.id === ap.resourceId),
+        )
+      )
+        return fail(NO_PERMISSION);
+      if (ap.status === a.status) return { ok: true, message: statusMessage(a.status, false), id: ap.id };
+      if (!allowedStatuses(ap.status).includes(a.status))
+        return fail('Para mudar, primeiro desfaça: o atendimento volta para "agendado".');
+      if (ap.accountId) {
+        const acc = d.accounts.find((x) => x.id === ap.accountId);
+        if (acc && d.movements.some((m) => m.accountId === acc.id && !m.undoneAt))
+          return fail("Já há pagamento registrado para este atendimento. Desfaça o recebimento no financeiro antes.");
+        if (acc && !acc.canceledAt)
+          Object.assign(acc, { canceledAt: nowIso, canceledBy: me, cancelReason: "Atendimento desfeito na agenda" });
+        ap.accountId = null;
+      }
+      let accountId: string | null = null;
+      if ((a.status === "compareceu" || (a.status === "faltou" && a.charge)) && ap.priceCents > 0) {
+        accountId = ctx.newId();
+        const service = d.services.find((s) => s.id === ap.serviceId);
+        d.accounts.push({
+          id: accountId,
+          kind: "receber",
+          clientId: ap.clientId,
+          supplier: null,
+          description: `${a.status === "faltou" ? "Falta: " : ""}${service?.name ?? "Atendimento"}`,
+          origin: "atendimento",
+          saleId: null,
+          installmentNumber: 1,
+          installmentCount: 1,
+          amountCents: ap.priceCents,
+          dueDate: today,
+          category: null,
+          canceledAt: null,
+          canceledBy: null,
+          cancelReason: null,
+          createdAt: nowIso,
+        });
+      }
+      ap.status = a.status;
+      ap.accountId = accountId;
+      const what: Record<typeof a.status, string> = {
+        confirmado: "Horário confirmado",
+        compareceu: "Atendimento realizado",
+        faltou: accountId ? "Faltou (falta cobrada)" : "Faltou",
+        cancelado: "Horário cancelado",
+        agendado: "Atendimento voltou para agendado",
+      };
+      log("agenda", what[a.status], ap.clientId);
+      return { ok: true, message: statusMessage(a.status, accountId !== null), id: ap.id };
+    }
+
+    case "appointment.markReminded": {
+      const ap = visible.appointments.some((x) => x.id === a.id)
+        ? d.appointments.find((x) => x.id === a.id)
+        : undefined;
+      if (
+        !ap ||
+        !canManageResource(
+          roles,
+          me,
+          d.resources.find((r) => r.id === ap.resourceId),
+        )
+      )
+        return fail("Atendimento não encontrado.");
+      ap.remindedAt = nowIso;
+      return { ok: true, message: "Lembrete anotado.", id: ap.id };
+    }
+
+    case "clinicalNote.add": {
+      if (!moduleEnabled(d.company, "prontuario")) return fail(MODULE_OFF);
+      if (!can(roles, "prontuario.escrever")) return fail("Somente quem atende escreve a ficha de atendimento.");
+      const client = findVisibleClient(a.clientId);
+      if (!client) return fail(`${t.Cliente} não encontrado.`);
+      if (
+        a.correctsId &&
+        !d.clinicalNotes.some((n) => n.id === a.correctsId && n.authorId === me && n.clientId === client.id)
+      )
+        return fail("Anotação a corrigir não encontrada.");
+      if (a.appointmentId && !d.appointments.some((x) => x.id === a.appointmentId && x.clientId === client.id))
+        return fail("Atendimento não encontrado.");
+      const id = ctx.newId();
+      d.clinicalNotes.push({
+        id,
+        clientId: client.id,
+        appointmentId: a.appointmentId,
+        authorId: me,
+        body: a.body,
+        correctsId: a.correctsId,
+        createdAt: nowIso,
+      });
+      return { ok: true, message: a.correctsId ? "Correção salva." : "Anotação salva.", id };
     }
 
     case "deal.save": {

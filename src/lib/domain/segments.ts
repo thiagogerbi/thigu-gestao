@@ -32,10 +32,10 @@ export interface ModuleInfo {
 
 export const MODULES: Record<ModuleId, ModuleInfo> = {
   itens: { label: "Pets e veículos do cliente", minPlan: "essencial", built: true },
-  agenda: { label: "Agenda", minPlan: "essencial", built: false },
-  servicos: { label: "Lista de serviços", minPlan: "essencial", built: false },
-  prontuario: { label: "Ficha de atendimento", minPlan: "essencial", built: false },
-  lembretes: { label: "Lembretes pelo WhatsApp", minPlan: "essencial", built: false },
+  agenda: { label: "Agenda", minPlan: "essencial", built: true },
+  servicos: { label: "Lista de serviços", minPlan: "essencial", built: true },
+  prontuario: { label: "Ficha de atendimento", minPlan: "essencial", built: true },
+  lembretes: { label: "Lembretes pelo WhatsApp", minPlan: "essencial", built: true },
   pacotes: { label: "Pacotes de sessões", minPlan: "essencial", built: false },
   mensalidades: { label: "Mensalidades", minPlan: "essencial", built: false },
   turmas: { label: "Turmas e presença", minPlan: "essencial", built: false },

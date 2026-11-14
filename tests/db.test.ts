@@ -970,3 +970,206 @@ describe("ramos, módulos e papéis por ramo", () => {
     );
   });
 });
+
+// Agenda, serviços e ficha de atendimento (20261114000007 e 20261114000008).
+describe("agenda no banco", () => {
+  let C = ""; // clínica da Ana
+  let recep = "";
+  let prof1 = "";
+  let prof2 = "";
+  let r1 = ""; // agenda do prof1
+  let r2 = ""; // agenda do prof2
+  let sala = ""; // agenda sem login
+  let svc = "";
+  let pac2 = ""; // paciente do prof2
+  let ap = ""; // horário do pac2 com o prof1
+
+  const count = async (sql: string, params: unknown[] = []) =>
+    (await one<{ c: number }>(`select count(*)::int c from (${sql}) q`, params)).c;
+  const insertAppointment = (resource: string, client: string, by: string, start = "2026-11-20 13:00+00", extra = "") =>
+    one<{ id: string }>(
+      `insert into appointments (company_id, client_id, resource_id, service_id, starts_at, ends_at, price_cents, created_by${extra ? ", status" : ""})
+       values ($1, $2, $3, $4, $5::timestamptz, $5::timestamptz + interval '50 minutes', 20000, $6${extra ? ", " + extra : ""}) returning id`,
+      [C, client, resource, svc, start, by],
+    );
+
+  beforeAll(async () => {
+    recep = await newUser("recep@clinica.test");
+    prof1 = await newUser("prof1@clinica.test");
+    prof2 = await newUser("prof2@clinica.test");
+    C = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Bem Viver', 'clinica') as id"))).id;
+    await inviteAndAccept(C, U.ana, "recep@clinica.test", "{recepcao}", recep);
+    await inviteAndAccept(C, U.ana, "prof1@clinica.test", "{profissional}", prof1);
+    await inviteAndAccept(C, U.ana, "prof2@clinica.test", "{profissional}", prof2);
+  });
+
+  it("só administrador ou gestor cadastram agendas e serviços, e só com o módulo ligado", async () => {
+    const insertResource = (company: string, name: string, user: string | null) =>
+      one<{ id: string }>("insert into resources (company_id, name, user_id) values ($1, $2, $3) returning id", [
+        company,
+        name,
+        user,
+      ]);
+    await as(U.ana, async () => {
+      r1 = (await insertResource(C, "Profissional 1", prof1)).id;
+      r2 = (await insertResource(C, "Profissional 2", prof2)).id;
+      sala = (await insertResource(C, "Sala 3", null)).id;
+      // uma agenda por pessoa
+      await expect(insertResource(C, "De novo", prof1)).rejects.toThrow(/duplicate key/);
+      svc = (
+        await one<{ id: string }>(
+          "insert into services (company_id, name, duration_min, price_cents) values ($1, 'Sessão', 50, 20000) returning id",
+          [C],
+        )
+      ).id;
+      // a Aurora é do ramo geral: não tem agenda
+      await expect(insertResource(A, "Sala", null)).rejects.toThrow(/row-level security/);
+    });
+    for (const user of [recep, prof1]) {
+      await as(user, async () => {
+        await expect(insertResource(C, "Minha", null)).rejects.toThrow(/row-level security/);
+        await expect(
+          db.query("insert into services (company_id, name, duration_min) values ($1, 'X', 30)", [C]),
+        ).rejects.toThrow(/row-level security/);
+        // mas toda a equipe lê os nomes
+        expect(await count("select 1 from resources where company_id = $1", [C])).toBe(3);
+        expect(await count("select 1 from services where company_id = $1", [C])).toBe(1);
+      });
+    }
+  });
+
+  it("a recepção marca em qualquer agenda; o profissional, só na dele", async () => {
+    pac2 = (
+      await as(recep, () =>
+        one<{ id: string }>(
+          "insert into clients (company_id, name, owner_id) values ($1, 'Paciente 2', $2) returning id",
+          [C, prof2],
+        ),
+      )
+    ).id;
+    ap = (await as(recep, () => insertAppointment(r1, pac2, recep))).id;
+    await as(recep, () => insertAppointment(sala, pac2, recep, "2026-11-20 15:00+00"));
+    await as(prof2, async () => {
+      await insertAppointment(r2, pac2, prof2, "2026-11-21 13:00+00");
+      // na agenda do colega, não
+      await expect(insertAppointment(r1, pac2, prof2, "2026-11-22 13:00+00")).rejects.toThrow(/row-level security/);
+      // horário em nome de outra pessoa, não
+      await expect(insertAppointment(r2, pac2, recep, "2026-11-22 13:00+00")).rejects.toThrow(/row-level security/);
+      // já nasce "atendido"? não: a situação só muda pela função
+      await expect(insertAppointment(r2, pac2, prof2, "2026-11-23 13:00+00", "'compareceu'")).rejects.toThrow(
+        /row-level security/,
+      );
+    });
+    await as(prof1, async () => {
+      // não vê a Paciente 2 por ser do colega... até ter horário com ela: aí vê, mas não edita
+      expect(await rows<{ id: string }>("select id from clients where company_id = $1", [C])).toEqual([{ id: pac2 }]);
+      const upd = await db.query("update clients set name = 'x' where id = $1", [pac2]);
+      expect(upd.affectedRows ?? 0).toBe(0);
+      // e vê só os horários da própria agenda
+      expect(await rows<{ id: string }>("select id from appointments where company_id = $1", [C])).toEqual([
+        { id: ap },
+      ]);
+    });
+    await as(recep, async () => {
+      expect(await count("select 1 from appointments where company_id = $1", [C])).toBe(3);
+    });
+    await as(U.vend, async () => {
+      expect(await count("select 1 from appointments where company_id = $1", [C])).toBe(0);
+    });
+  });
+
+  it("remarcar só enquanto está em aberto; a situação não muda direto na tabela", async () => {
+    await as(prof1, async () => {
+      await db.query(
+        "update appointments set starts_at = starts_at + interval '1 hour', ends_at = ends_at + interval '1 hour' where id = $1",
+        [ap],
+      );
+      await expect(db.query("update appointments set status = 'compareceu' where id = $1", [ap])).rejects.toThrow(
+        /permission denied/i,
+      );
+      await expect(db.query("update appointments set account_id = null where id = $1", [ap])).rejects.toThrow(
+        /permission denied/i,
+      );
+      await expect(db.query("delete from appointments where id = $1", [ap])).rejects.toThrow(/permission denied/i);
+      // fim antes do início: barrado
+      await expect(
+        db.query("update appointments set ends_at = starts_at - interval '1 minute' where id = $1", [ap]),
+      ).rejects.toThrow();
+    });
+  });
+
+  it("atendido gera a conta a receber; desfazer cancela; com pagamento, não desfaz", async () => {
+    const status = (user: string, s: string, charge = false) =>
+      as(user, () =>
+        one<{ r: { account_id: string | null } }>(
+          "select public.set_appointment_status($1, $2::appointment_status, $3) as r",
+          [ap, s, charge],
+        ),
+      );
+    // o outro profissional não mexe no horário do colega
+    await expect(status(prof2, "compareceu")).rejects.toThrow(/não encontrado/);
+    const done = await status(recep, "compareceu");
+    const acc = done.r.account_id!;
+    expect(acc).toBeTruthy();
+    const account = await one<{ origin: string; amount_cents: string; client_id: string; kind: string }>(
+      "select origin::text, amount_cents::text, client_id, kind::text from accounts where id = $1",
+      [acc],
+    );
+    expect(account).toEqual({ origin: "atendimento", amount_cents: "20000", client_id: pac2, kind: "receber" });
+    // a recepção não vê o financeiro; a administradora vê
+    expect(await as(recep, () => count("select 1 from accounts where id = $1", [acc]))).toBe(0);
+    expect(await as(U.ana, () => count("select 1 from accounts where id = $1", [acc]))).toBe(1);
+    // de atendido não vai direto para cancelado
+    await expect(status(recep, "cancelado")).rejects.toThrow(/desfaça/);
+    await status(recep, "agendado");
+    expect(
+      (await one<{ c: string | null }>("select canceled_at::text c from accounts where id = $1", [acc])).c,
+    ).not.toBeNull();
+    // falta cobrada: nova conta; a administradora registra o pagamento e aí não desfaz
+    const noShow = await status(recep, "faltou", true);
+    const acc2 = noShow.r.account_id!;
+    expect((await one<{ d: string }>("select description d from accounts where id = $1", [acc2])).d).toBe(
+      "Falta: Sessão",
+    );
+    await as(U.ana, () =>
+      db.query("select public.register_movement($1, 20000, '2026-11-20', 'pix', $2)", [acc2, randomUUID()]),
+    );
+    await expect(status(recep, "agendado")).rejects.toThrow(/pagamento registrado/);
+    // a linha de histórico fica na ficha do paciente
+    expect(
+      await count("select 1 from activities where client_id = $1 and kind = 'agenda'", [pac2]),
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it("ficha de atendimento: só quem escreveu lê; nada muda nem some", async () => {
+    const write = (user: string, body: string, corrects: string | null = null) =>
+      as(user, () =>
+        one<{ id: string }>(
+          "insert into clinical_notes (company_id, client_id, author_id, body, corrects_id) values ($1, $2, $3, $4, $5) returning id",
+          [C, pac2, user, body, corrects],
+        ),
+      );
+    const n1 = (await write(prof1, "Evolução do atendimento.")).id;
+    const n2 = (await write(prof2, "Anotação do outro profissional.")).id;
+    await write(prof1, "Correção.", n1);
+    // corrigir anotação de outra pessoa: barrado
+    await expect(write(prof1, "Invasão.", n2)).rejects.toThrow(/row-level security/);
+    // quem não atende não escreve, nem a administradora
+    await expect(write(recep, "Recepção.")).rejects.toThrow(/row-level security/);
+    await expect(write(U.ana, "Dona.")).rejects.toThrow(/row-level security/);
+    expect(await as(prof1, () => count("select 1 from clinical_notes"))).toBe(2);
+    expect(await as(prof2, () => count("select 1 from clinical_notes"))).toBe(1);
+    for (const user of [U.ana, recep]) expect(await as(user, () => count("select 1 from clinical_notes"))).toBe(0);
+    await as(prof1, async () => {
+      await expect(db.query("update clinical_notes set body = 'mudou' where id = $1", [n1])).rejects.toThrow(
+        /permission denied/i,
+      );
+      await expect(db.query("delete from clinical_notes where id = $1", [n1])).rejects.toThrow(/permission denied/i);
+    });
+    // a clínica troca de ramo: o prontuário fica guardado, mas some das telas
+    await as(U.ana, () => db.query("update companies set segment = 'beleza' where id = $1", [C]));
+    expect(await as(prof1, () => count("select 1 from clinical_notes"))).toBe(0);
+    await as(U.ana, () => db.query("update companies set segment = 'clinica' where id = $1", [C]));
+    expect(await as(prof1, () => count("select 1 from clinical_notes"))).toBe(2);
+  });
+});

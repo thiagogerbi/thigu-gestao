@@ -92,8 +92,9 @@ describe("catálogo de ramos", () => {
 
   it("módulo ainda não construído não aparece, mesmo ligado", () => {
     const clinica = { segment: "clinica", plan: "empresa", extraModules: [] } as const;
-    expect(moduleEnabled(clinica, "agenda")).toBe(true);
-    expect(moduleAvailable(clinica, "agenda")).toBe(false);
+    expect(moduleEnabled(clinica, "pacotes")).toBe(true);
+    expect(moduleAvailable(clinica, "pacotes")).toBe(false);
+    expect(moduleAvailable(clinica, "agenda")).toBe(true);
     expect(itemKindFor({ segment: "pet", plan: "empresa", extraModules: [] })).toBe("pet");
     expect(itemKindFor({ segment: "clinica", plan: "empresa", extraModules: [] })).toBeNull();
   });
@@ -283,9 +284,15 @@ describe("pet shop (prévia)", () => {
     expect(r.step(karina, pet("t-simone", { name: "" })).ok).toBe(false);
   });
 
-  it("o banhista só vê e cadastra pets dos próprios tutores; o caixa vê todos", () => {
+  it("o banhista só cadastra pets dos próprios tutores; vê os de quem atende; o caixa vê todos", () => {
     const { pet: shop, leandro, marcos } = setup();
-    expect(visibleData(shop, leandro).items).toHaveLength(0); // os três pets são de tutores da atendente
+    // os três pets são de tutores da atendente, mas Leandro atende Thor e Bob na agenda
+    expect(
+      visibleData(shop, leandro)
+        .clients.map((c) => c.id)
+        .sort(),
+    ).toEqual(["t-paula", "t-rogerio", "t-simone"]);
+    expect(visibleData(shop, leandro).items).toHaveLength(3);
     expect(visibleData(shop, marcos).items).toHaveLength(3);
     expect(applyAction(shop, leandro, pet("t-paula"), ctx()).result.ok).toBe(false);
     expect(applyAction(shop, leandro, pet("t-simone"), ctx()).result.ok).toBe(true);

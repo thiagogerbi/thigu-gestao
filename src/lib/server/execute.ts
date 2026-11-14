@@ -1,18 +1,35 @@
 import type { Action, ActionResult } from "@/lib/actions/schemas";
 import { checkPlan } from "@/lib/domain/installments";
 import { formatBRL } from "@/lib/domain/money";
-import { can, canAssignClientOwner, canAssignOthers, type Capability } from "@/lib/domain/permissions";
+import {
+  addMinutes,
+  conflictsFor,
+  durationMinutes,
+  MODULE_OFF,
+  overlapMessage,
+  seriesStarts,
+  slotError,
+  statusMessage,
+} from "@/lib/domain/agenda";
+import {
+  can,
+  canAssignClientOwner,
+  canAssignOthers,
+  canManageResource,
+  type Capability,
+} from "@/lib/domain/permissions";
 import { hasProposalErrors, proposalTotalCents, validateProposal } from "@/lib/domain/proposals";
 import {
   cleanFields,
   mergeFields,
   ITEM_KINDS,
   itemKindFor,
+  moduleEnabled,
   SEGMENTS,
   termsFor,
   type CompanyFlags,
 } from "@/lib/domain/segments";
-import { STAGE_LABEL, type Role } from "@/lib/domain/types";
+import { STAGE_LABEL, type AppointmentStatus, type Role } from "@/lib/domain/types";
 import type { ServerSupabase } from "@/lib/supabase/server";
 import "server-only";
 
@@ -190,6 +207,190 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
       if (!data?.length) return fail("Cadastro não encontrado ou sem permissão para editar.");
       await log(`${data[0].name} ${a.active ? "voltou para a ficha" : "arquivado"}`, "cliente", data[0].client_id);
       return { ok: true, message: a.active ? `${data[0].name} voltou para a ficha.` : `${data[0].name} arquivado.` };
+    }
+
+    case "service.save": {
+      if (!need("agenda.configurar")) return fail("Somente o administrador ou o gestor cadastram serviços.");
+      const flags = await companyFlags();
+      if (!flags || !moduleEnabled(flags, "servicos")) return fail(MODULE_OFF);
+      const values = { name: a.name, duration_min: a.durationMin, price_cents: a.priceCents, active: a.active };
+      if (a.id) {
+        const { data, error } = await sb
+          .from("services")
+          .update(values)
+          .eq("id", a.id)
+          .eq("company_id", companyId)
+          .select("id");
+        if (error) return dbFail(error);
+        if (!data?.length) return fail("Serviço não encontrado.");
+        return { ok: true, message: `Serviço ${a.name} salvo.`, id: a.id };
+      }
+      const { data, error } = await sb
+        .from("services")
+        .insert({ ...values, company_id: companyId })
+        .select("id")
+        .single();
+      if (error) return dbFail(error);
+      return { ok: true, message: `Serviço ${a.name} cadastrado.`, id: data.id };
+    }
+
+    case "resource.save": {
+      if (!need("agenda.configurar")) return fail("Somente o administrador ou o gestor cadastram quem atende.");
+      const flags = await companyFlags();
+      if (!flags || !moduleEnabled(flags, "agenda")) return fail(MODULE_OFF);
+      const values = { name: a.name, user_id: a.userId, active: a.active };
+      const { data, error } = a.id
+        ? await sb.from("resources").update(values).eq("id", a.id).eq("company_id", companyId).select("id")
+        : await sb
+            .from("resources")
+            .insert({ ...values, company_id: companyId })
+            .select("id");
+      if (error?.code === "23505")
+        return fail("Esta pessoa já tem uma agenda.", { userId: "Esta pessoa já tem uma agenda." });
+      if (error?.code === "23503")
+        return fail("Escolha alguém da equipe.", { userId: "Pessoa não encontrada na equipe." });
+      if (error) return dbFail(error);
+      if (!data?.length) return fail("Agenda não encontrada.");
+      return { ok: true, message: a.id ? `Agenda de ${a.name} salva.` : `Agenda de ${a.name} criada.`, id: data[0].id };
+    }
+
+    case "appointment.save": {
+      const flags = await companyFlags();
+      if (!flags || !moduleEnabled(flags, "agenda")) return fail(MODULE_OFF);
+      const t = termsFor(flags.segment);
+      const { data: resource } = await sb
+        .from("resources")
+        .select("id, name, user_id, active")
+        .eq("id", a.resourceId)
+        .eq("company_id", companyId)
+        .maybeSingle();
+      if (!resource?.active) return fail("Escolha quem vai atender.", { resourceId: "Escolha quem vai atender." });
+      if (!canManageResource(roles, userId, { userId: resource.user_id }))
+        return fail("Você só pode marcar na sua própria agenda.");
+      const slotErr = slotError(a.startsAt, a.endsAt);
+      if (slotErr) return fail(slotErr, { endsAt: slotErr });
+      const values = {
+        client_id: a.clientId,
+        resource_id: a.resourceId,
+        service_id: a.serviceId,
+        item_id: a.itemId,
+        starts_at: a.startsAt,
+        ends_at: a.endsAt,
+        price_cents: a.priceCents,
+        notes: a.notes,
+      };
+      const minutes = durationMinutes(a);
+      const slots = a.id
+        ? [{ startsAt: a.startsAt, endsAt: a.endsAt }]
+        : seriesStarts(a.startsAt, a.repeat, a.times).map((s) => ({ startsAt: s, endsAt: addMinutes(s, minutes) }));
+      // horários já marcados nesta agenda no período (o banco só devolve o que a pessoa pode ver,
+      // e ela pode ver tudo desta agenda, porque pode marcar nela)
+      const { data: taken, error: takenError } = await sb
+        .from("appointments")
+        .select("id, starts_at, ends_at, status")
+        .eq("company_id", companyId)
+        .eq("resource_id", a.resourceId)
+        .neq("status", "cancelado")
+        .lt("starts_at", slots[slots.length - 1].endsAt)
+        .gt("ends_at", slots[0].startsAt);
+      if (takenError) return dbFail(takenError);
+      const existing = (taken ?? []).map((x) => ({
+        id: x.id as string,
+        resourceId: a.resourceId,
+        startsAt: x.starts_at as string,
+        endsAt: x.ends_at as string,
+        status: x.status as AppointmentStatus,
+      }));
+      const busy = slots.filter(
+        (s) => conflictsFor(existing, { resourceId: a.resourceId, ...s, ignoreId: a.id }).length,
+      ).length;
+      if (busy && !a.allowOverlap)
+        return fail(overlapMessage(busy, resource.name), { overlap: overlapMessage(busy, resource.name) });
+      if (a.id) {
+        const { data, error } = await sb
+          .from("appointments")
+          .update(values)
+          .eq("id", a.id)
+          .eq("company_id", companyId)
+          .select("id");
+        if (error) return dbFail(error);
+        if (!data?.length) return fail("Atendimento não encontrado ou já encerrado. Desfaça antes de remarcar.");
+        await log(`Horário remarcado com ${resource.name}`, "agenda", a.clientId);
+        return { ok: true, message: "Horário atualizado.", id: a.id };
+      }
+      const seriesId = slots.length > 1 ? crypto.randomUUID() : null;
+      const { data, error } = await sb
+        .from("appointments")
+        .insert(
+          slots.map((s) => ({
+            ...values,
+            starts_at: s.startsAt,
+            ends_at: s.endsAt,
+            series_id: seriesId,
+            company_id: companyId,
+            created_by: userId,
+          })),
+        )
+        .select("id, starts_at")
+        .order("starts_at");
+      if (error) {
+        if (/row-level security/i.test(error.message ?? ""))
+          return fail(`Não foi possível marcar: confira o ${t.cliente} e quem vai atender.`);
+        return dbFail(error);
+      }
+      await log(
+        slots.length > 1
+          ? `${slots.length} horários marcados com ${resource.name}`
+          : `Horário marcado com ${resource.name}`,
+        "agenda",
+        a.clientId,
+      );
+      return {
+        ok: true,
+        message: slots.length > 1 ? `${slots.length} horários marcados.` : "Horário marcado.",
+        id: data?.[0]?.id,
+      };
+    }
+
+    case "appointment.setStatus": {
+      const { data, error } = await sb.rpc("set_appointment_status", {
+        p_appointment: a.id,
+        p_status: a.status,
+        p_charge: a.charge,
+      });
+      if (error) return dbFail(error);
+      const r = data as { already: boolean; account_id?: string | null };
+      return { ok: true, message: statusMessage(a.status, Boolean(r?.account_id)), id: a.id };
+    }
+
+    case "appointment.markReminded": {
+      const { data, error } = await sb
+        .from("appointments")
+        .update({ reminded_at: new Date().toISOString() })
+        .eq("id", a.id)
+        .eq("company_id", companyId)
+        .select("id");
+      if (error) return dbFail(error);
+      if (!data?.length) return fail("Atendimento não encontrado.");
+      return { ok: true, message: "Lembrete anotado.", id: a.id };
+    }
+
+    case "clinicalNote.add": {
+      if (!need("prontuario.escrever")) return fail("Somente quem atende escreve a ficha de atendimento.");
+      const { data, error } = await sb
+        .from("clinical_notes")
+        .insert({
+          company_id: companyId,
+          client_id: a.clientId,
+          appointment_id: a.appointmentId,
+          author_id: userId,
+          body: a.body,
+          corrects_id: a.correctsId,
+        })
+        .select("id")
+        .single();
+      if (error) return dbFail(error);
+      return { ok: true, message: a.correctsId ? "Correção salva." : "Anotação salva.", id: data.id };
     }
 
     case "deal.save": {

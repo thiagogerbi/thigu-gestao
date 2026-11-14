@@ -1,6 +1,8 @@
 import type {
   Account,
   Activity,
+  Appointment,
+  ClinicalNote,
   Client,
   ClientItem,
   CompanyData,
@@ -11,8 +13,10 @@ import type {
   MyInvite,
   Note,
   Proposal,
+  Resource,
   Role,
   Sale,
+  Service,
   Task,
 } from "@/lib/domain/types";
 import type { ServerSupabase } from "@/lib/supabase/server";
@@ -81,33 +85,60 @@ export async function loadCompanyInvites(sb: ServerSupabase, companyId: string):
 /** Carrega o que o usuário pode ver da empresa. O filtro de permissão é feito pelo banco (RLS). */
 export async function loadCompanyData(sb: ServerSupabase, companyId: string): Promise<CompanyData> {
   const q = (t: string, cols = "*") => sb.from(t).select(cols).eq("company_id", companyId);
-  const [company, members, clients, items, deals, tasks, notes, proposals, sales, accounts, movements, activities] =
-    await Promise.all([
-      sb
-        .from("companies")
-        .select(
-          "id, name, legal_name, document, phone, email, address, default_terms, logo_data_url, brand_color, menu_color, segment, plan, extra_modules",
-        )
-        .eq("id", companyId)
-        .single(),
-      q("memberships", "user_id, roles, active, profiles(full_name, email)").eq("active", true),
-      q("clients").order("name"),
-      // o banco só devolve itens quando o módulo está ligado para a empresa
-      q("client_items").order("created_at"),
-      q("deals"),
-      q("tasks"),
-      q("notes").order("created_at", { ascending: false }).limit(1000),
-      q("proposals", "*, proposal_items(*)"),
-      q("sales"),
-      q("accounts"),
-      q("movements"),
-      q("activities").order("created_at", { ascending: false }).limit(1000),
-    ]);
+  // atendimentos dos últimos 120 dias em diante (o histórico mais antigo fica no banco)
+  const since = new Date(Date.now() - 120 * 86_400_000).toISOString();
+  const [
+    company,
+    members,
+    clients,
+    items,
+    resources,
+    services,
+    appointments,
+    clinicalNotes,
+    deals,
+    tasks,
+    notes,
+    proposals,
+    sales,
+    accounts,
+    movements,
+    activities,
+  ] = await Promise.all([
+    sb
+      .from("companies")
+      .select(
+        "id, name, legal_name, document, phone, email, address, default_terms, logo_data_url, brand_color, menu_color, segment, plan, extra_modules",
+      )
+      .eq("id", companyId)
+      .single(),
+    q("memberships", "user_id, roles, active, profiles(full_name, email)").eq("active", true),
+    q("clients").order("name"),
+    // o banco só devolve itens quando o módulo está ligado para a empresa
+    q("client_items").order("created_at"),
+    // agenda, serviços e ficha de atendimento: o banco filtra por módulo, papel e autoria
+    q("resources").order("name"),
+    q("services").order("name"),
+    q("appointments").gte("starts_at", since).order("starts_at"),
+    q("clinical_notes").order("created_at", { ascending: false }).limit(1000),
+    q("deals"),
+    q("tasks"),
+    q("notes").order("created_at", { ascending: false }).limit(1000),
+    q("proposals", "*, proposal_items(*)"),
+    q("sales"),
+    q("accounts"),
+    q("movements"),
+    q("activities").order("created_at", { ascending: false }).limit(1000),
+  ]);
   for (const r of [
     company,
     members,
     clients,
     items,
+    resources,
+    services,
+    appointments,
+    clinicalNotes,
     deals,
     tasks,
     notes,
@@ -163,6 +194,45 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
       alert: i.alert ?? "",
       active: i.active,
       createdAt: i.created_at,
+    })),
+    resources: rows(resources).map((r): Resource => ({
+      id: r.id,
+      name: r.name,
+      userId: r.user_id,
+      active: r.active,
+    })),
+    services: rows(services).map((s): Service => ({
+      id: s.id,
+      name: s.name,
+      durationMin: s.duration_min,
+      priceCents: Number(s.price_cents),
+      active: s.active,
+    })),
+    appointments: rows(appointments).map((a): Appointment => ({
+      id: a.id,
+      clientId: a.client_id,
+      resourceId: a.resource_id,
+      serviceId: a.service_id,
+      itemId: a.item_id,
+      startsAt: a.starts_at,
+      endsAt: a.ends_at,
+      status: a.status,
+      priceCents: Number(a.price_cents),
+      notes: a.notes ?? "",
+      seriesId: a.series_id,
+      accountId: a.account_id,
+      remindedAt: a.reminded_at,
+      createdBy: a.created_by,
+      createdAt: a.created_at,
+    })),
+    clinicalNotes: rows(clinicalNotes).map((n): ClinicalNote => ({
+      id: n.id,
+      clientId: n.client_id,
+      appointmentId: n.appointment_id,
+      authorId: n.author_id,
+      body: n.body,
+      correctsId: n.corrects_id,
+      createdAt: n.created_at,
     })),
     deals: rows(deals).map((d): Deal => ({
       id: d.id,

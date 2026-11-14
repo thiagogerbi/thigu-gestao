@@ -15,10 +15,10 @@ export function telUrl(phone: string): string | null {
  * Link que abre a conversa no WhatsApp (wa.me), ou null quando o número não tem DDD.
  * O WhatsApp exige o número completo com o código do país: 55 + DDD + número.
  */
-export function whatsappUrl(phone: string): string | null {
+export function whatsappUrl(phone: string, text?: string): string | null {
   let d = digitsOf(phone).replace(/^0+/, ""); // "0" de operadora na frente do DDD
   if ((d.length === 12 || d.length === 13) && d.startsWith("55")) d = d.slice(2);
   // DDD (2) + fixo (8) ou celular (9); DDD nunca começa com 0
   if (d.length !== 10 && d.length !== 11) return null;
-  return `https://wa.me/55${d}`;
+  return `https://wa.me/55${d}${text ? `?text=${encodeURIComponent(text)}` : ""}`;
 }

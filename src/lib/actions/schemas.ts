@@ -15,6 +15,11 @@ const id = z.string().min(1).max(64);
 const cents = z.number().int().min(0).max(100_000_000_00);
 const positiveCents = z.number().int().min(1).max(100_000_000_00);
 const date = z.string().refine(isISODate, "Data inválida");
+/** Instante completo (ISO com fuso), como o navegador envia ("2026-11-14T12:30:00.000Z"). */
+const instant = z
+  .string()
+  .max(40)
+  .refine((s) => s.includes("T") && !Number.isNaN(Date.parse(s)), "Data e hora inválidas");
 const text = (max: number) => z.string().trim().max(max);
 const hexColor = z
   .string()
@@ -86,6 +91,53 @@ export const actionSchema = z.discriminatedUnion("type", [
     alert: text(200),
   }),
   z.object({ type: z.literal("item.setActive"), id, active: z.boolean() }),
+  z.object({
+    type: z.literal("service.save"),
+    id: id.optional(),
+    name: text(80).min(1, "Digite o nome do serviço."),
+    durationMin: z.number().int().min(5, "Use pelo menos 5 minutos.").max(720, "Use até 12 horas."),
+    priceCents: cents,
+    active: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("resource.save"),
+    id: id.optional(),
+    name: text(80).min(1, "Digite o nome."),
+    userId: id.nullable(),
+    active: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("appointment.save"),
+    id: id.optional(),
+    clientId: id,
+    resourceId: id,
+    serviceId: id.nullable(),
+    itemId: id.nullable(),
+    startsAt: instant,
+    endsAt: instant,
+    priceCents: cents,
+    notes: text(500),
+    /** Só vale ao marcar um horário novo. */
+    repeat: z.enum(["nao", "semanal", "quinzenal"]),
+    times: z.number().int().min(1).max(12),
+    /** A pessoa viu o aviso de horário ocupado e quer marcar mesmo assim (encaixe). */
+    allowOverlap: z.boolean(),
+  }),
+  z.object({
+    type: z.literal("appointment.setStatus"),
+    id,
+    status: z.enum(["agendado", "confirmado", "compareceu", "faltou", "cancelado"]),
+    /** Cobrar a falta (só vale para "faltou"). */
+    charge: z.boolean(),
+  }),
+  z.object({ type: z.literal("appointment.markReminded"), id }),
+  z.object({
+    type: z.literal("clinicalNote.add"),
+    clientId: id,
+    appointmentId: id.nullable(),
+    body: text(5000).min(1, "Escreva a anotação."),
+    correctsId: id.nullable(),
+  }),
   z.object({
     type: z.literal("deal.save"),
     id: id.optional(),

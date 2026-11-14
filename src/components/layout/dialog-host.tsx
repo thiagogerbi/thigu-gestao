@@ -3,6 +3,10 @@
 import { DialogContext, type DialogProps, type DialogSpec } from "@/components/layout/dialog-context";
 import { ClientDialog } from "@/features/clients/client-dialog";
 import { ItemDialog } from "@/features/clients/item-dialog";
+import { AppointmentDialog } from "@/features/agenda/appointment-dialog";
+import { NoShowDialog } from "@/features/agenda/no-show-dialog";
+import { ResourceDialog } from "@/features/services/resource-dialog";
+import { ServiceDialog } from "@/features/services/service-dialog";
 import { DealDialog } from "@/features/deals/deal-dialog";
 import { LostDealDialog } from "@/features/deals/lost-deal-dialog";
 import { CancelAccountDialog } from "@/features/finance/cancel-account-dialog";
@@ -24,6 +28,22 @@ function renderDialog(spec: DialogSpec, props: DialogProps) {
       return <ClientDialog {...props} clientId={spec.clientId} />;
     case "item":
       return <ItemDialog {...props} clientId={spec.clientId} itemId={spec.itemId} />;
+    case "appointment":
+      return (
+        <AppointmentDialog
+          {...props}
+          appointmentId={spec.appointmentId}
+          clientId={spec.clientId}
+          resourceId={spec.resourceId}
+          date={spec.date}
+        />
+      );
+    case "noShow":
+      return <NoShowDialog {...props} appointmentId={spec.appointmentId} />;
+    case "service":
+      return <ServiceDialog {...props} serviceId={spec.serviceId} />;
+    case "resource":
+      return <ResourceDialog {...props} resourceId={spec.resourceId} userId={spec.userId} />;
     case "deal":
       return <DealDialog {...props} dealId={spec.dealId} clientId={spec.clientId} />;
     case "task":

@@ -6,6 +6,10 @@ import { createContext, useContext } from "react";
 export type DialogSpec =
   | { kind: "client"; clientId?: string }
   | { kind: "item"; clientId: string; itemId?: string }
+  | { kind: "appointment"; appointmentId?: string; clientId?: string; resourceId?: string; date?: string }
+  | { kind: "noShow"; appointmentId: string }
+  | { kind: "service"; serviceId?: string }
+  | { kind: "resource"; resourceId?: string; userId?: string }
   | { kind: "deal"; dealId?: string; clientId?: string }
   | { kind: "task"; taskId?: string; clientId?: string; dealId?: string }
   | { kind: "lostDeal"; dealId: string }

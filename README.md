@@ -139,9 +139,9 @@ As telas usam a mesma interface (`BackendValue`) nas duas versões. Na **prévia
 | Vendedor           | Os próprios clientes e negociações; fechar vendas e propor parcelas; ver parcelas das próprias vendas.                  |
 | Financeiro         | Conferir vendas, criar contas a receber, cadastrar despesas, registrar/desfazer recebimentos e pagamentos. Vê clientes. |
 
-| Recepção | Cadastrar e editar os clientes de toda a equipe e anotar na ficha. Não vê negociações, vendas nem o financeiro. |
-| Profissional | Os próprios clientes: cadastrar, editar e anotar. Não vê os clientes dos colegas. |
-| Caixa | O mesmo que a recepção, por enquanto (o caixa do dia ainda não existe). |
+| Recepção | Cadastrar e editar os clientes de toda a equipe, anotar na ficha e marcar na agenda de todos. Não vê negociações, vendas, financeiro nem a ficha de atendimento. |
+| Profissional | Os próprios clientes e a própria agenda; vê também quem tem horário com ele. Escreve a ficha de atendimento, que só ele lê. |
+| Caixa | Cadastrar e consultar os clientes de toda a equipe. Não usa a agenda (o caixa do dia ainda não existe). |
 
 Uma pessoa pode ter vários papéis e participar de várias empresas (seletor "Minha empresa").
 
@@ -152,7 +152,17 @@ Ao criar a empresa, a pessoa escolhe o ramo (dá para trocar depois em **Minha e
 - **nomes das telas** — "paciente" na clínica, "tutor" no pet shop, "aluno" nas turmas;
 - **papéis oferecidos à equipe e seus nomes** — "Profissional de saúde", "Mecânico", "Atendente";
 - **campos extras da ficha** — nascimento e convênio na clínica, endereço no pet shop;
-- **módulos ligados** — hoje só os pets do cliente (ramo pet shop); agenda, ordem de serviço e os demais estão no catálogo, mas ainda não foram construídos.
+- **módulos ligados** — prontos: pets do cliente, agenda, lista de serviços, ficha de atendimento e lembretes; ordem de serviço, pacotes, caixa e os demais estão no catálogo, mas ainda não foram construídos.
+
+### Agenda (clínica, salão, pet shop e aulas)
+
+- **Serviços e equipe:** uma agenda por pessoa ou sala (ligada a alguém da equipe, ou só um nome, como "Mesa de tosa 2") e os serviços com duração e valor.
+- **Agenda:** o dia, com uma coluna por agenda, ou os próximos 7 dias. Marcar (com cadastro do cliente ali mesmo), remarcar, repetir toda semana ou a cada 15 dias (até 12 vezes) e aviso de horário ocupado, com opção de encaixe.
+- **Situação:** agendado → confirmado → atendido, faltou ou cancelado. **Atendido gera a conta a receber** no financeiro (`origin = 'atendimento'`), e a falta pode ser cobrada. "Desfazer" volta para agendado e cancela a conta, desde que nada tenha sido recebido nela. Tudo pela função `set_appointment_status`.
+- **Lembrete com 1 clique:** abre o WhatsApp com a mensagem pronta no jeito de cada ramo. Nada é enviado automaticamente; o sistema só anota que o lembrete foi aberto.
+- **Ficha de atendimento (prontuário):** só quem escreveu lê, nem o administrador. Nada é editado nem apagado: corrigir cria outra anotação ligada à original. Antes de usar com pacientes reais, validar com um advogado as regras da LGPD e dos conselhos profissionais.
+- **Visão geral:** nos ramos com agenda, mostra os horários de hoje, os lembretes de amanhã e as faltas da semana.
+- A carga de dados traz os atendimentos dos últimos 120 dias em diante.
 
 O catálogo fica em `src/lib/domain/segments.ts` e tem um espelho no banco (`_segment_modules`, `_module_min_plan`); um teste compara os dois. Toda ação passa por quatro perguntas:
 
@@ -169,7 +179,7 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 
 ## O que funciona, o que é simulado e o que está pendente
 
-### Testado automaticamente (`npm test` — 81 testes)
+### Testado automaticamente (`npm test` — 102 testes)
 
 - Regras de dinheiro, datas, divisão de parcelas, saldo e situação das contas, totais de proposta e matriz de permissões.
 - **Caso de aceitação completo** no motor da prévia **e no banco** (migrações reais rodando no PGlite):
@@ -177,6 +187,7 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 - RLS: vendedor não vê contas a pagar nem lança despesas; chave composta impede misturar empresas; histórico não pode ser apagado; o dono faz o fluxo sozinho; numeração e aceite de propostas.
 - Chamadas diretas ao banco (sem passar pela interface): o e-mail do perfil não pode ser trocado para receber o convite de outra pessoa; venda não fecha com parcela sem número, valor ou vencimento; vendedor não aponta a própria negociação para um cliente que não vê; proposta e itens só são gravados pelas funções.
 - Ramos e papéis novos, no motor da prévia **e no banco**: o catálogo do banco é igual ao do aplicativo; só o administrador troca o ramo e ninguém troca o plano; recepção e caixa cuidam dos clientes de todos e o profissional só dos próprios; nenhum dos três vê negociações, vendas ou financeiro; pets só existem com o módulo ligado, são lidos por quem vê o tutor e gravados por quem edita o tutor, nunca entre empresas; trocar de ramo não apaga os campos do ramo anterior.
+- Agenda, no motor da prévia **e no banco**: cada profissional vê e marca só na própria agenda; quem atende um paciente do colega passa a vê-lo, mas não edita a ficha; a situação não muda direto na tabela; atendido gera a conta a receber, desfazer cancela, e com pagamento registrado não desfaz; falta cobrada vira conta; horário encerrado não se remarca; a ficha de atendimento só é lida por quem escreveu e não pode ser alterada nem apagada; empresas sem o módulo não têm agenda.
 - Convites: o vínculo só existe depois do aceite; o convite espera quem ainda não tem conta; e-mail não confirmado não vê nem aceita; recusar e cancelar não criam vínculo; só o administrador convida e cancela; quem teve o acesso removido só volta aceitando um novo convite.
 
 ### Verificado manualmente no navegador (prévia, por mim, assistente de IA)
@@ -214,7 +225,7 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 ### Pendente / próximos passos
 
 - Ramos: as telas de negociações, propostas, financeiro, tarefas e o guia da prévia ainda dizem "cliente" em todos os ramos; a troca de nome vale para o menu, a lista, a ficha, o cadastro e a visão geral.
-- Ramos: agenda, lista de serviços, ficha de atendimento, lembretes e painel inicial por ramo (segunda parte da fase 1 do plano).
+- Agenda: horário de trabalho e folgas de cada agenda; remarcar ou cancelar toda a série de uma vez; ver a semana em grade de horários; registro de quem abriu cada ficha de atendimento (hoje só o autor lê, então não há outros acessos para registrar).
 
 - Testes de ponta a ponta (Playwright) contra um Supabase local (`supabase start`, que exige Docker).
 - Enviar o convite por e-mail (hoje o convite existe e exige aceite, mas o administrador avisa a pessoa por conta própria).

@@ -15,6 +15,7 @@ import {
   IconWallet,
 } from "@/components/ui/icons";
 import { cx } from "@/components/ui/styles";
+import { TodayAgenda } from "@/features/agenda/today-agenda";
 import { MoneyJourney } from "@/features/overview/money-journey";
 import { formatDateBR } from "@/lib/domain/dates";
 import { formatBRL } from "@/lib/domain/money";
@@ -24,6 +25,7 @@ import { proposalTotalCents } from "@/lib/domain/proposals";
 import { useBackend, useCan } from "@/state/backend-context";
 import { clientById, firstName } from "@/state/selectors";
 import { useNav } from "@/state/use-nav";
+import { useAgenda } from "@/state/use-agenda";
 import { useTerms } from "@/state/use-terms";
 import Link from "next/link";
 import { useState } from "react";
@@ -68,6 +70,7 @@ export function OverviewScreen() {
   // recepção, profissional e caixa não acompanham vendas nem dinheiro: veem um resumo dos clientes
   const followsSales = usesCrm(me.roles) || fin;
   const mayAddClient = canDo("clientes.editar_proprios");
+  const agenda = useAgenda();
 
   // Avisos em ordem de urgência: dinheiro atrasado primeiro, depois o que trava o fluxo, depois o dia a dia.
   const priorities: Priority[] = [];
@@ -187,7 +190,11 @@ export function OverviewScreen() {
   const nextStep = steps.findIndex((s) => !s.done);
 
   const primary =
-    canDo("financeiro.registrar") && !crm ? (
+    agenda.enabled && agenda.manageable.length > 0 ? (
+      <Button size="lg" onClick={() => dialogs.open({ kind: "appointment" })}>
+        <IconPlus className="h-5 w-5" /> Marcar horário
+      </Button>
+    ) : canDo("financeiro.registrar") && !crm ? (
       <Button variant="money" size="lg" onClick={() => dialogs.open({ kind: "settle", accountKind: "receber" })}>
         <IconMoneyIn className="h-5 w-5" /> Registrar recebimento
       </Button>
@@ -212,6 +219,8 @@ export function OverviewScreen() {
         }
         actions={primary}
       />
+
+      <TodayAgenda />
 
       {showOnboarding && (
         <Card className="mb-6 p-5">
@@ -310,7 +319,7 @@ export function OverviewScreen() {
 
       {followsSales ? (
         <MoneyJourney ov={ov} />
-      ) : (
+      ) : agenda.enabled ? null : (
         <Card className="p-5">
           <h2 className="font-display text-lg font-bold">{t.Clientes}</h2>
           <p className="text-muted">

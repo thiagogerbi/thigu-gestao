@@ -3,14 +3,24 @@
 import { CompanyMark } from "@/components/brand/company-mark";
 import { DialogHost } from "@/components/layout/dialog-host";
 import { Button } from "@/components/ui/button";
-import { IconBuilding, IconCheck, IconColumns, IconHome, IconUndo, IconUsers, IconWallet } from "@/components/ui/icons";
+import {
+  IconBuilding,
+  IconCalendar,
+  IconCheck,
+  IconColumns,
+  IconHome,
+  IconUndo,
+  IconUsers,
+  IconWallet,
+} from "@/components/ui/icons";
 import { Modal } from "@/components/ui/overlay";
 import { cx } from "@/components/ui/styles";
 import { ToastProvider } from "@/components/ui/toast";
 import { ClientDrawer } from "@/features/clients/client-drawer";
 import { PreviewTour, type TourMode } from "@/features/tour/preview-tour";
 import { brandCss } from "@/lib/domain/branding";
-import { can, usesClients, usesCrm } from "@/lib/domain/permissions";
+import { can, usesAgenda, usesClients, usesCrm } from "@/lib/domain/permissions";
+import { moduleAvailable } from "@/lib/domain/segments";
 import type { Role } from "@/lib/domain/types";
 import { useBackend } from "@/state/backend-context";
 import { useTerms } from "@/state/use-terms";
@@ -19,10 +29,16 @@ import { usePathname } from "next/navigation";
 import { Suspense, useState, useSyncExternalStore } from "react";
 
 function useNavItems() {
-  const { me, basePath } = useBackend();
+  const { me, basePath, data } = useBackend();
   const t = useTerms();
   const items = [
     { href: basePath, label: "Visão geral", icon: IconHome, show: true },
+    {
+      href: `${basePath}/agenda`,
+      label: "Agenda",
+      icon: IconCalendar,
+      show: moduleAvailable(data.company, "agenda") && usesAgenda(me.roles),
+    },
     { href: `${basePath}/clientes`, label: t.Clientes, icon: IconUsers, show: usesClients(me.roles) },
     { href: `${basePath}/negociacoes`, label: "Negociações", icon: IconColumns, show: usesCrm(me.roles) },
     { href: `${basePath}/tarefas`, label: "Tarefas", icon: IconCheck, show: true },
