@@ -375,6 +375,8 @@ describe("caso de aceitação no banco", () => {
       await expect(db.query("update companies set created_by = $2 where id = $1", [A, U.outro])).rejects.toThrow();
       // formatos inválidos barrados pelo banco
       await expect(db.query("update companies set brand_color = 'red' where id = $1", [A])).rejects.toThrow();
+      await db.query("update companies set menu_color = '#1f2937' where id = $1", [A]);
+      await expect(db.query("update companies set menu_color = 'blue' where id = $1", [A])).rejects.toThrow();
       await expect(
         db.query("update companies set logo_data_url = 'data:image/svg+xml;base64,PHN2Zz4=' where id = $1", [A]),
       ).rejects.toThrow();

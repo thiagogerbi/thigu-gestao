@@ -73,7 +73,7 @@ export function MoneyJourney({ ov }: { ov: Overview }) {
       <h2 id="jornada" className="font-display text-lg font-bold">
         Do primeiro contato ao dinheiro no bolso
       </h2>
-      <p className="mb-4 text-muted">É isso que o Thigu acompanha. Toque em uma etapa para ver os detalhes.</p>
+      <p className="mb-4 text-muted">É isso que o sistema acompanha. Toque em uma etapa para ver os detalhes.</p>
       <ol className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
         {steps.map((s, i) => (
           <li key={s.label} className="relative">

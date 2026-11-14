@@ -63,6 +63,7 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
           default_terms: a.defaultTerms,
           logo_data_url: a.logoDataUrl,
           brand_color: a.brandColor,
+          menu_color: a.menuColor,
         })
         .eq("id", companyId)
         .select("id");

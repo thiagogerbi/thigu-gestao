@@ -72,7 +72,8 @@ export function MembersManager() {
       <form onSubmit={add} className="grid gap-3 rounded-lg bg-canvas p-3" noValidate>
         <h3 className="font-display font-bold">Adicionar pessoa</h3>
         <p className="text-sm text-muted">
-          A pessoa precisa ter criado uma conta no Thigu com este e-mail. Nenhum convite é enviado automaticamente.
+          A pessoa precisa ter criado uma conta com este e-mail na tela de entrada. Nenhum convite é enviado
+          automaticamente.
         </p>
         <TextField
           label="E-mail da pessoa"

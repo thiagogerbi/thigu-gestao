@@ -1,4 +1,5 @@
 "use client";
+import { CompanyMark } from "@/components/brand/company-mark";
 import { Button } from "@/components/ui/button";
 import { Card, InlineAlert } from "@/components/ui/card";
 import { TextAreaField, TextField } from "@/components/ui/fields";
@@ -6,7 +7,8 @@ import { useToast } from "@/components/ui/toast";
 import { BrandColorPicker } from "@/features/company/brand-color-picker";
 import { CompanyLetterhead } from "@/features/company/company-letterhead";
 import { prepareLogo } from "@/features/company/logo-image";
-import { brandPalette, THIGU_BLUE } from "@/lib/domain/branding";
+import { MenuColorPicker } from "@/features/company/menu-color-picker";
+import { brandPalette, menuPalette, THIGU_BLUE } from "@/lib/domain/branding";
 import { formatDocument } from "@/lib/domain/document";
 import type { CompanyProfile } from "@/lib/domain/types";
 import { useAction, useBackend } from "@/state/backend-context";
@@ -70,10 +72,14 @@ export function CompanyProfileForm() {
   }
 
   const palette = brandPalette(draft.brandColor ?? THIGU_BLUE);
+  const menu = menuPalette(draft.brandColor, draft.menuColor);
   const previewStyle = {
     "--color-primary": palette.primary,
     "--color-primary-700": palette.primary700,
     "--color-primary-50": palette.primary50,
+    "--color-navy": menu.navy,
+    "--color-navy-700": menu.navy700,
+    "--color-navy-600": menu.navy600,
   } as React.CSSProperties;
 
   return (
@@ -81,7 +87,8 @@ export function CompanyProfileForm() {
       <form onSubmit={submit} noValidate>
         <h2 className="font-display text-lg font-bold">Dados e aparência da empresa</h2>
         <p className="mb-5 text-muted">
-          Estes dados aparecem no topo das propostas que você envia. A cor vale para todas as pessoas da empresa.
+          Estes dados aparecem no topo das propostas que você envia. O logotipo e as cores valem para todas as pessoas
+          da empresa.
         </p>
 
         <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
@@ -199,9 +206,21 @@ export function CompanyProfileForm() {
             </div>
 
             <BrandColorPicker value={draft.brandColor} onChange={(hex) => set("brandColor", hex)} />
+            <MenuColorPicker
+              brandColor={draft.brandColor}
+              value={draft.menuColor}
+              onChange={(hex) => set("menuColor", hex)}
+            />
 
             <div style={previewStyle} aria-label="Prévia" role="group">
               <p className="mb-1 text-sm font-semibold text-ink">Prévia</p>
+              <div className="mb-3 rounded-lg bg-navy p-3" aria-hidden="true">
+                <CompanyMark name={draft.name || "Nome da empresa"} logoDataUrl={draft.logoDataUrl} variant="menu" />
+                <div className="mt-3 grid gap-1 text-sm font-medium">
+                  <span className="rounded-lg bg-primary px-3 py-2 text-white ring-1 ring-white/40">Visão geral</span>
+                  <span className="px-3 py-2 text-white/85">Clientes</span>
+                </div>
+              </div>
               <div className="rounded-lg border border-line bg-white p-4">
                 <CompanyLetterhead
                   company={{

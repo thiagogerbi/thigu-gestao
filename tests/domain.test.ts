@@ -6,10 +6,15 @@ import {
   brandCss,
   brandPalette,
   BRAND_PRESETS,
+  companyInitials,
   contrastRatio,
   fitLogo,
+  MENU_MIN_CONTRAST,
+  MENU_PRESETS,
+  menuPalette,
   MIN_CONTRAST,
   THIGU_BLUE,
+  THIGU_NAVY,
 } from "@/lib/domain/branding";
 import { formatDocument, isValidCNPJ, isValidCPF, isValidDocument, normalizeDocument } from "@/lib/domain/document";
 import { can } from "@/lib/domain/permissions";
@@ -167,6 +172,25 @@ describe("identidade da empresa", () => {
     expect(brandCss(THIGU_BLUE)).toBeNull();
     expect(brandCss("red;}body{display:none")).toBeNull();
     expect(brandCss("#0f766e")).toContain("--color-primary:#0f766e");
+  });
+  it("menu: automático segue a marca, cor escolhida fica legível e o padrão não muda", () => {
+    expect(menuPalette(null, null).navy).toBe(THIGU_NAVY);
+    expect(brandCss(null, null)).toBeNull();
+    const auto = menuPalette("#6d28d9", null);
+    expect(auto.adjusted).toBe(false);
+    expect(contrastRatio(auto.navy, "#ffffff")).toBeGreaterThanOrEqual(MENU_MIN_CONTRAST);
+    expect(brandCss("#6d28d9", null)).toContain(`--color-navy:${auto.navy}`);
+    for (const p of MENU_PRESETS) expect(menuPalette(null, p.hex).adjusted).toBe(false);
+    const light = menuPalette(null, "#93c5fd");
+    expect(light.adjusted).toBe(true);
+    expect(contrastRatio(light.navy, "#ffffff")).toBeGreaterThanOrEqual(MENU_MIN_CONTRAST);
+    expect(brandCss(null, "#1f2937")).toContain("--color-navy:#1f2937");
+    expect(brandCss(null, "#1f2937")).not.toContain("--color-primary");
+  });
+  it("iniciais da empresa sem logotipo", () => {
+    expect(companyInitials("Aurora Estúdio")).toBe("AE");
+    expect(companyInitials("Horizonte")).toBe("HO");
+    expect(companyInitials("  ")).toBe("?");
   });
   it("reduz o logotipo mantendo a proporção e sem ampliar", () => {
     expect(fitLogo(1200, 400)).toEqual({ width: 600, height: 200 });

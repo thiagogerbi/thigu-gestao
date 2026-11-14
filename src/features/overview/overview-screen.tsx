@@ -206,7 +206,9 @@ export function OverviewScreen() {
       {showOnboarding && (
         <Card className="mb-6 p-5">
           <h2 className="font-display text-lg font-bold">Primeiros passos</h2>
-          <p className="mb-4 text-muted">Quatro passos para ver o Thigu funcionando do contato ao dinheiro recebido.</p>
+          <p className="mb-4 text-muted">
+            Quatro passos para ver o sistema funcionando do contato ao dinheiro recebido.
+          </p>
           <ol className="grid gap-2 md:grid-cols-4">
             {steps.map((s, i) => (
               <li

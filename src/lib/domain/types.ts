@@ -30,6 +30,8 @@ export interface CompanyProfile extends Company {
   logoDataUrl: string | null;
   /** #rrggbb escolhido pela empresa, ou null para o azul Thigu. */
   brandColor: string | null;
+  /** #rrggbb do menu lateral, ou null para um tom escuro automático da cor da marca. */
+  menuColor: string | null;
 }
 
 export const EMPTY_PROFILE: Omit<CompanyProfile, "id" | "name"> = {
@@ -41,6 +43,7 @@ export const EMPTY_PROFILE: Omit<CompanyProfile, "id" | "name"> = {
   defaultTerms: "",
   logoDataUrl: null,
   brandColor: null,
+  menuColor: null,
 };
 
 export interface Member {

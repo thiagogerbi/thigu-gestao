@@ -1,6 +1,6 @@
 "use client";
 
-import { ThiguLogo, ThiguMark } from "@/components/brand/thigu-logo";
+import { CompanyMark } from "@/components/brand/company-mark";
 import { DialogHost } from "@/components/layout/dialog-host";
 import { Button } from "@/components/ui/button";
 import { IconBuilding, IconCheck, IconColumns, IconHome, IconUsers, IconWallet } from "@/components/ui/icons";
@@ -41,12 +41,16 @@ function isActive(pathname: string, href: string, basePath: string) {
 const navItemClass = (active: boolean) =>
   cx(
     "flex min-h-11 items-center gap-3 rounded-lg px-3 font-medium",
-    active ? "bg-primary text-white shadow-sm" : "text-[#dbe4f3] hover:bg-navy-700 hover:text-white",
+    // o anel branco mantém o item ativo visível mesmo quando o menu e a marca têm cores parecidas
+    active
+      ? "bg-primary text-white shadow-sm ring-1 ring-white/40"
+      : "text-white/85 hover:bg-navy-700 hover:text-white",
   );
 
-function CompanySwitcher({ dark }: { dark?: boolean }) {
+function CompanySwitcher({ dark, hideSingle }: { dark?: boolean; hideSingle?: boolean }) {
   const { companies, data, switchCompany } = useBackend();
   if (companies.length <= 1) {
+    if (hideSingle) return null;
     return (
       <p className={cx("truncate text-sm font-semibold", dark ? "text-white" : "text-ink")}>{data.company.name}</p>
     );
@@ -56,7 +60,7 @@ function CompanySwitcher({ dark }: { dark?: boolean }) {
       <span
         className={cx(
           "mb-1 block text-xs font-semibold uppercase tracking-wide",
-          dark ? "text-[#c9d6ea]" : "text-muted",
+          dark ? "text-white/75" : "text-muted",
         )}
       >
         Minha empresa
@@ -80,41 +84,24 @@ function CompanySwitcher({ dark }: { dark?: boolean }) {
   );
 }
 
-/** Logotipo da empresa no menu, sobre fundo branco para funcionar com qualquer imagem. */
-function CompanyLogo() {
-  const { data } = useBackend();
-  if (!data.company.logoDataUrl) return null;
-  return (
-    <div className="mb-3 flex h-16 items-center justify-center rounded-lg bg-white p-2">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={data.company.logoDataUrl}
-        alt={`Logotipo de ${data.company.name}`}
-        className="max-h-full max-w-full object-contain"
-      />
-    </div>
-  );
-}
-
-/** Troca os tons de ação do tema pela cor da empresa (vale também para janelas abertas fora do menu). */
+/** Troca os tons do tema (ações e menu) pelas cores da empresa; vale também para janelas abertas fora do menu. */
 function BrandTheme() {
   const { data } = useBackend();
-  const css = brandCss(data.company.brandColor);
+  const css = brandCss(data.company.brandColor, data.company.menuColor);
   return css ? <style>{css}</style> : null;
 }
 
 function Sidebar() {
-  const { me, basePath, signOut } = useBackend();
+  const { me, basePath, signOut, data } = useBackend();
   const pathname = usePathname();
   const items = useNavItems();
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-navy px-4 py-5 text-white lg:flex print:hidden">
-      <Link href={basePath} className="mb-6 rounded-lg px-1">
-        <ThiguLogo dark />
+      <Link href={basePath} className="mb-4 block rounded-lg" aria-label={`${data.company.name} — Visão geral`}>
+        <CompanyMark name={data.company.name} logoDataUrl={data.company.logoDataUrl} variant="menu" />
       </Link>
       <div className="mb-5">
-        <CompanyLogo />
-        <CompanySwitcher dark />
+        <CompanySwitcher dark hideSingle />
       </div>
       <nav aria-label="Menu principal" className="flex-1">
         <ul className="grid gap-1">
@@ -141,7 +128,7 @@ function Sidebar() {
       </nav>
       <div className="rounded-lg bg-navy-700 p-3 text-sm">
         <p className="font-semibold">{me.name}</p>
-        <p className="text-[#c9d6ea]">{me.roles.map((r) => ROLE_LABEL[r]).join(", ")}</p>
+        <p className="text-white/75">{me.roles.map((r) => ROLE_LABEL[r]).join(", ")}</p>
         {signOut && (
           <button
             type="button"
@@ -157,11 +144,11 @@ function Sidebar() {
 }
 
 function MobileTop() {
-  const { basePath } = useBackend();
+  const { basePath, data } = useBackend();
   return (
     <div className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-line bg-white px-4 py-2 lg:hidden print:hidden">
-      <Link href={basePath} className="shrink-0 rounded-lg" aria-label="Thigu Gestão — Visão geral">
-        <ThiguMark className="h-9 w-9" />
+      <Link href={basePath} className="shrink-0 rounded-lg" aria-label={`${data.company.name} — Visão geral`}>
+        <CompanyMark name={data.company.name} logoDataUrl={data.company.logoDataUrl} variant="compacto" />
       </Link>
       <div className="min-w-0 flex-1">
         <CompanySwitcher />

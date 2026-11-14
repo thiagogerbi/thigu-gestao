@@ -145,7 +145,7 @@ Uma pessoa pode ter vários papéis e participar de várias empresas (seletor "M
 
 ## O que funciona, o que é simulado e o que está pendente
 
-### Testado automaticamente (`npm test` — 40 testes)
+### Testado automaticamente (`npm test` — 42 testes)
 
 - Regras de dinheiro, datas, divisão de parcelas, saldo e situação das contas, totais de proposta e matriz de permissões.
 - **Caso de aceitação completo** no motor da prévia **e no banco** (migrações reais rodando no PGlite):
@@ -179,7 +179,9 @@ Uma pessoa pode ter vários papéis e participar de várias empresas (seletor "M
 - O administrador preenche razão social, CNPJ ou CPF (aceita o CNPJ alfanumérico), telefone, e-mail, endereço e as **condições comerciais padrão**, que já vêm preenchidas em cada proposta nova.
 - **Logotipo:** PNG, JPG, WebP ou SVG. O navegador reduz para no máximo 600 × 240 px e regrava como WebP. Fica na própria linha da empresa (`companies.logo_data_url`, até cerca de 300 KB), sem precisar do Supabase Storage. SVG nunca é guardado como SVG.
 - **Cor da marca:** 8 sugestões ou qualquer cor. Troca só os tons de ação (`--color-primary*`). Cores claras demais são escurecidas automaticamente para manter contraste de 4,5:1 com texto branco. O verde do dinheiro, os alertas e o menu escuro não mudam.
-- O logotipo e os dados aparecem no cabeçalho da proposta (tela e impressão). O logotipo também aparece no menu lateral.
+- **Cor do menu lateral:** automática (tom escuro da cor da marca), 6 sugestões escuras ou qualquer cor. A cor escolhida é escurecida quando preciso para manter contraste de 7:1 com o texto branco do menu.
+- **Marca branca dentro do sistema:** o menu e a barra do celular mostram o logotipo da empresa (ou as iniciais na cor da marca). A marca Thigu aparece só no login, na criação da empresa e na página inicial.
+- O logotipo e os dados aparecem no cabeçalho da proposta (tela e impressão).
 - No banco, o administrador só altera as colunas editáveis da empresa (`created_by` ficou protegido), e o formato de cada campo é conferido por `check`.
 
 ### Pendente / próximos passos

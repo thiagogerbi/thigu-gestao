@@ -45,7 +45,9 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
     await Promise.all([
       sb
         .from("companies")
-        .select("id, name, legal_name, document, phone, email, address, default_terms, logo_data_url, brand_color")
+        .select(
+          "id, name, legal_name, document, phone, email, address, default_terms, logo_data_url, brand_color, menu_color",
+        )
         .eq("id", companyId)
         .single(),
       q("memberships", "user_id, roles, active, profiles(full_name, email)").eq("active", true),
@@ -77,6 +79,7 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
       defaultTerms: co.default_terms ?? "",
       logoDataUrl: co.logo_data_url ?? null,
       brandColor: co.brand_color ?? null,
+      menuColor: co.menu_color ?? null,
     },
     members: rows(members).map((m): Member => ({
       userId: m.user_id,

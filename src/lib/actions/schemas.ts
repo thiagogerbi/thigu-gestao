@@ -14,6 +14,11 @@ const cents = z.number().int().min(0).max(100_000_000_00);
 const positiveCents = z.number().int().min(1).max(100_000_000_00);
 const date = z.string().refine(isISODate, "Data inválida");
 const text = (max: number) => z.string().trim().max(max);
+const hexColor = z
+  .string()
+  .regex(/^#[0-9a-fA-F]{6}$/, "Cor inválida.")
+  .transform((v) => v.toLowerCase())
+  .nullable();
 
 export const planSchema = z
   .array(z.object({ number: z.number().int().min(1).max(36), amountCents: positiveCents, dueDate: date }))
@@ -49,11 +54,8 @@ export const actionSchema = z.discriminatedUnion("type", [
       .max(LOGO_MAX_CHARS, "A imagem ficou grande demais. Tente um arquivo menor.")
       .regex(LOGO_DATA_URL_RE, "Use uma imagem PNG, JPG ou WebP.")
       .nullable(),
-    brandColor: z
-      .string()
-      .regex(/^#[0-9a-fA-F]{6}$/, "Cor inválida.")
-      .transform((v) => v.toLowerCase())
-      .nullable(),
+    brandColor: hexColor,
+    menuColor: hexColor,
   }),
   z.object({
     type: z.literal("client.save"),

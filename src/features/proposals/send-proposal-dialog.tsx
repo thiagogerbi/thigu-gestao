@@ -44,7 +44,7 @@ export function SendProposalDialog({ onClose, proposalId }: DialogProps & { prop
     >
       <div className="grid gap-4">
         {error && <InlineAlert>{error}</InlineAlert>}
-        <InlineAlert tone="blue" title={isPreview ? "Isto é uma simulação" : "O Thigu não envia mensagens"}>
+        <InlineAlert tone="blue" title={isPreview ? "Isto é uma simulação" : "O sistema não envia mensagens"}>
           {isPreview
             ? "Na prévia nada é enviado de verdade. Vamos apenas marcar a proposta como enviada."
             : `Envie a proposta para ${client?.name ?? "o cliente"} por e-mail, WhatsApp ou pessoalmente (use “Imprimir ou salvar em PDF”). Aqui você só registra que enviou.`}

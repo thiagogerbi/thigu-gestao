@@ -211,6 +211,7 @@ describe("dados e aparência da empresa (prévia)", () => {
     defaultTerms: "Pagamento em 30 dias.",
     logoDataUrl: "data:image/png;base64,iVBORw0KGgo=",
     brandColor: "#0F766E",
+    menuColor: null,
   };
 
   it("administrador salva; CNPJ e cor são normalizados", () => {
