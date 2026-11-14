@@ -33,7 +33,11 @@ export type Capability =
   | "comissoes.configurar" // regras de comissão
   | "comissoes.fechar" // fechar o mês e gerar a conta a pagar
   | "turmas.gerenciar" // criar e editar turmas
-  | "turmas.matricular"; // matricular alunos e marcar presença (o instrutor marca nas próprias turmas)
+  | "turmas.matricular" // matricular alunos e marcar presença (o instrutor marca nas próprias turmas)
+  | "os.ver_todas" // ver todas as ordens de serviço (o mecânico vê as dele)
+  | "os.editar" // abrir OS, orçar, enviar, registrar aprovação, mover qualquer etapa, cancelar
+  | "os.desconto_livre" // desconto acima de 10% do orçamento
+  | "os.entregar"; // entregar o veículo e gerar a cobrança
 
 const ALL_CLIENTS: Capability[] = ["clientes.ver_todos", "clientes.editar_todos", "clientes.editar_proprios"];
 
@@ -60,6 +64,10 @@ const MATRIX: Record<Role, Capability[]> = {
     "comissoes.fechar",
     "turmas.gerenciar",
     "turmas.matricular",
+    "os.ver_todas",
+    "os.editar",
+    "os.desconto_livre",
+    "os.entregar",
   ],
   gestor: [
     ...ALL_CLIENTS,
@@ -75,6 +83,10 @@ const MATRIX: Record<Role, Capability[]> = {
     "comissoes.ver_todas",
     "turmas.gerenciar",
     "turmas.matricular",
+    "os.ver_todas",
+    "os.editar",
+    "os.desconto_livre",
+    "os.entregar",
   ],
   vendedor: [
     "clientes.editar_proprios",
@@ -94,9 +106,20 @@ const MATRIX: Record<Role, Capability[]> = {
     "caixa.fechar",
     "comissoes.ver_todas",
     "comissoes.fechar",
+    "os.ver_todas",
+    "os.entregar",
   ],
   // Papéis dos ramos com atendimento. O caixa do dia entra com o próximo módulo.
-  recepcao: [...ALL_CLIENTS, "agenda.todas", "recorrentes.vender", "caixa.operar", "turmas.matricular"],
+  recepcao: [
+    ...ALL_CLIENTS,
+    "agenda.todas",
+    "recorrentes.vender",
+    "caixa.operar",
+    "turmas.matricular",
+    "os.ver_todas",
+    "os.editar",
+    "os.entregar",
+  ],
   // o administrador não lê o prontuário dos outros: quem atende e também é dono acumula "profissional"
   profissional: ["clientes.editar_proprios", "agenda.propria", "prontuario.escrever"],
   caixa: [...ALL_CLIENTS, "caixa.operar"],

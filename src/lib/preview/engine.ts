@@ -50,6 +50,8 @@ import {
 } from "@/lib/domain/recurring";
 import { STAGE_LABEL, type Activity, type CompanyData, type Member, type Subscription } from "@/lib/domain/types";
 import { visibleData } from "@/lib/domain/visibility";
+import { isPlate, normalizePlate } from "@/lib/domain/work-orders";
+import { runWorkOrder } from "@/lib/preview/engine-work-orders";
 
 export interface EngineContext {
   now: Date;
@@ -187,10 +189,18 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
       const kind = ITEM_KINDS[a.kind];
       const details = cleanFields(kind.fields, a.details, "details");
       if (!details.ok) return fail("Alguns campos precisam de ajuste.", details.fieldErrors);
+      // veículo: placa obrigatória, sem hífen, única na empresa
+      const plate = a.kind === "veiculo" ? normalizePlate(a.plate ?? "") : null;
+      if (plate !== null && !isPlate(plate))
+        return fail("Confira a placa.", { plate: "Use a placa com 7 letras e números, como ABC1D23 ou ABC-1234." });
+      if (plate && d.items.some((i) => i.plate === plate && i.id !== a.id))
+        return fail("Esta placa já está cadastrada.", {
+          plate: "Já existe um veículo com esta placa. Procure pela placa.",
+        });
       if (a.id) {
         const item = d.items.find((i) => i.id === a.id && i.clientId === client.id);
         if (!item) return fail("Cadastro não encontrado.");
-        Object.assign(item, { name: a.name, details: details.value, alert: a.alert });
+        Object.assign(item, { name: a.name, details: details.value, alert: a.alert, plate });
         log("cliente", `Dados de ${a.name} (${kind.noun[0]}) atualizados`, client.id);
         return { ok: true, message: `${a.name} atualizado.`, id: item.id };
       }
@@ -202,12 +212,28 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
         name: a.name,
         details: details.value,
         alert: a.alert,
+        plate,
         active: true,
         createdAt: nowIso,
       });
       log("cliente", `${a.name} (${kind.noun[0]}) cadastrado`, client.id);
       return { ok: true, message: `${a.name} cadastrado.`, id };
     }
+
+    case "vehicle.transfer":
+    case "workOrder.open":
+    case "workOrder.save":
+    case "workOrder.diagnosis":
+    case "workOrder.addItem":
+    case "workOrder.removeItem":
+    case "workOrder.discount":
+    case "workOrder.send":
+    case "workOrder.approve":
+    case "workOrder.move":
+    case "workOrder.deliver":
+    case "workOrder.cancel":
+    case "workOrder.addPhoto":
+      return runWorkOrder(d, actor, a, { nowIso, newId: ctx.newId, visible, log });
 
     case "item.setActive": {
       const item = d.items.find((i) => i.id === a.id);
@@ -777,6 +803,8 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
         appointments: d.appointments,
         packages: d.packages,
         rules: d.commissionRules,
+        workOrders: d.workOrders,
+        workOrderItems: d.workOrderItems,
       });
       let accountId: string | null = null;
       const label = `${a.month.slice(5, 7)}/${a.month.slice(0, 4)}`;

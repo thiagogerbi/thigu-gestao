@@ -31,7 +31,7 @@ export type ModuleId =
   | "pedidos";
 
 /** O que o cliente traz para ser atendido. Hoje só pets; veículos entram com a ordem de serviço. */
-export type ItemKind = "pet";
+export type ItemKind = "pet" | "veiculo";
 
 export type Stage = "novo_contato" | "qualificacao" | "negociacao" | "proposta" | "ganha" | "perdida";
 
@@ -133,6 +133,8 @@ export interface ClientItem {
   details: Record<string, string>;
   /** Aviso que precisa saltar aos olhos: bravo, alérgico, idoso… */
   alert: string;
+  /** Placa do veículo, sem hífen e em maiúsculas (só veículos). */
+  plate?: string | null;
   active: boolean;
   createdAt: ISODateTime;
 }
@@ -383,7 +385,7 @@ export interface Sale {
 
 export type AccountKind = "receber" | "pagar";
 export type AccountOrigin =
-  "venda" | "despesa" | "avulsa" | "atendimento" | "pacote" | "mensalidade" | "caixa" | "comissao";
+  "venda" | "despesa" | "avulsa" | "atendimento" | "pacote" | "mensalidade" | "caixa" | "comissao" | "os";
 
 export interface Account {
   id: string;
@@ -407,6 +409,79 @@ export interface Account {
   /** Cobrança de uma mensalidade, com o mês a que se refere (primeiro dia do mês). */
   subscriptionId?: string | null;
   period?: ISODate | null;
+  /** Cobrança de uma ordem de serviço entregue. */
+  workOrderId?: string | null;
+}
+
+// ---------------------------------------------------------------- Oficina (ordem de serviço)
+
+export type WorkOrderStage = "orcamento" | "aprovacao" | "peca" | "servico" | "pronto" | "entregue" | "cancelada";
+export type FuelLevel = "reserva" | "1/4" | "1/2" | "3/4" | "cheio";
+export type ApprovalChannel = "link" | "presencial" | "telefone" | "whatsapp";
+export type WorkOrderItemStatus = "pendente" | "aprovado" | "recusado";
+
+export interface WorkOrder {
+  id: string;
+  number: number;
+  clientId: string;
+  /** O veículo (item do cliente com placa). */
+  itemId: string;
+  /** Mecânico responsável (uma "agenda" de quem atende). */
+  resourceId: string | null;
+  stage: WorkOrderStage;
+  complaint: string;
+  diagnosis: string;
+  km: number | null;
+  fuel: FuelLevel | null;
+  /** Itens conferidos na entrada e avarias anotadas. */
+  checklist: string[];
+  promisedOn: ISODate | null;
+  discountCents: number;
+  shareToken: string | null;
+  sentAt: ISODateTime | null;
+  approvedAt: ISODateTime | null;
+  approvedByName: string | null;
+  approvalChannel: ApprovalChannel | null;
+  deliveredAt: ISODateTime | null;
+  totalCents: number | null;
+  canceledAt: ISODateTime | null;
+  cancelReason: string | null;
+  nextServiceOn: ISODate | null;
+  nextServiceNote: string;
+  createdBy: string;
+  createdAt: ISODateTime;
+}
+
+export interface WorkOrderItem {
+  id: string;
+  workOrderId: string;
+  kind: "peca" | "servico";
+  serviceId: string | null;
+  description: string;
+  quantity: number;
+  unitCents: number;
+  warrantyDays: number | null;
+  status: WorkOrderItemStatus;
+  addedBy: string;
+  createdAt: ISODateTime;
+}
+
+export interface WorkOrderEvent {
+  id: string;
+  workOrderId: string;
+  description: string;
+  actorId: string | null;
+  createdAt: ISODateTime;
+}
+
+export interface WorkOrderPhoto {
+  id: string;
+  workOrderId: string;
+  /** Endereço para mostrar a foto (link temporário do Storage, ou a imagem na prévia). */
+  url: string;
+  caption: string;
+  createdBy: string;
+  createdAt: ISODateTime;
 }
 
 /** Pacote de sessões vendido a um cliente. Sessões usadas = atendimentos que consumiram o pacote. */
@@ -487,6 +562,10 @@ export interface CompanyData {
   classes: ClassGroup[];
   enrollments: Enrollment[];
   attendance: Attendance[];
+  workOrders: WorkOrder[];
+  workOrderItems: WorkOrderItem[];
+  workOrderEvents: WorkOrderEvent[];
+  workOrderPhotos: WorkOrderPhoto[];
   deals: Deal[];
   tasks: Task[];
   notes: Note[];

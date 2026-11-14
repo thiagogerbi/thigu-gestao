@@ -88,6 +88,8 @@ export function CommissionsScreen() {
       appointments: data.appointments,
       packages: data.packages,
       rules: data.commissionRules,
+      workOrders: data.workOrders,
+      workOrderItems: data.workOrderItems,
     });
     return { resource: r, closing, sum };
   });
@@ -168,14 +170,18 @@ export function CommissionsScreen() {
             </div>
             {sum.lines.length > 0 && (
               <details className="mt-2">
-                <summary className="cursor-pointer text-sm font-semibold text-primary-700">Ver atendimentos</summary>
+                <summary className="cursor-pointer text-sm font-semibold text-primary-700">
+                  {data.workOrders.length ? "Ver serviços" : "Ver atendimentos"}
+                </summary>
                 <ul className="mt-2 divide-y divide-line text-sm">
                   {sum.lines.map((l) => (
-                    <li key={l.appointment.id} className="flex flex-wrap justify-between gap-2 py-1.5">
+                    <li key={l.key} className="flex flex-wrap justify-between gap-2 py-1.5">
                       <span>
-                        {formatShortDateBR(localParts(l.appointment.startsAt).date)} ·{" "}
-                        {ag.serviceName(l.appointment.serviceId) ?? "Atendimento"}
-                        {l.appointment.consumesPackage && " (sessão do pacote)"}
+                        {formatShortDateBR(localParts(l.at).date)} ·{" "}
+                        {l.item
+                          ? `OS nº ${l.workOrder?.number} · ${l.item.description}`
+                          : (ag.serviceName(l.serviceId) ?? "Atendimento")}
+                        {l.appointment?.consumesPackage && " (sessão do pacote)"}
                       </span>
                       <span className="tabular">
                         {formatBRL(l.baseCents)} → <span className="font-semibold">{formatBRL(l.amountCents)}</span>

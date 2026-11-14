@@ -10,6 +10,10 @@ import type {
   Enrollment,
   Product,
   ResourceBlock,
+  WorkOrder,
+  WorkOrderEvent,
+  WorkOrderItem,
+  WorkOrderPhoto,
   Appointment,
   ClinicalNote,
   Client,
@@ -121,6 +125,10 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
     classes,
     enrollments,
     attendance,
+    workOrders,
+    workOrderItems,
+    workOrderEvents,
+    workOrderPhotos,
     deals,
     tasks,
     notes,
@@ -158,6 +166,11 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
     q("classes").order("name"),
     q("enrollments"),
     q("attendance").gte("class_date", since.slice(0, 10)),
+    // oficina: as 500 OS mais recentes (o banco devolve só as que a pessoa pode ver)
+    q("work_orders").order("number", { ascending: false }).limit(500),
+    q("work_order_items").order("created_at").limit(5000),
+    q("work_order_events").order("created_at").limit(5000),
+    q("work_order_photos").order("created_at").limit(2000),
     q("deals"),
     q("tasks"),
     q("notes").order("created_at", { ascending: false }).limit(1000),
@@ -187,6 +200,10 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
     classes,
     enrollments,
     attendance,
+    workOrders,
+    workOrderItems,
+    workOrderEvents,
+    workOrderPhotos,
     deals,
     tasks,
     notes,
@@ -200,6 +217,17 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
   }
   const rows = (r: { data: unknown }) => (r.data ?? []) as Row[];
   const co = company.data as Row;
+  // fotos ficam num bucket privado: links temporários de 1 hora
+  const photoRows = rows(workOrderPhotos);
+  const signed = new Map<string, string>();
+  if (photoRows.length) {
+    const { data: urls, error } = await sb.storage.from("os-fotos").createSignedUrls(
+      photoRows.map((p) => p.path),
+      3600,
+    );
+    if (error) console.error("[thigu] não foi possível gerar os links das fotos", error);
+    for (const u of urls ?? []) if (u.path && u.signedUrl) signed.set(u.path, u.signedUrl);
+  }
 
   return {
     company: {
@@ -243,6 +271,7 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
       name: i.name,
       details: i.details ?? {},
       alert: i.alert ?? "",
+      plate: i.plate ?? null,
       active: i.active,
       createdAt: i.created_at,
     })),
@@ -376,6 +405,64 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
       classDate: a.class_date,
       status: a.status,
     })),
+    workOrders: rows(workOrders).map((w): WorkOrder => ({
+      id: w.id,
+      number: w.number,
+      clientId: w.client_id,
+      itemId: w.item_id,
+      resourceId: w.resource_id,
+      stage: w.stage,
+      complaint: w.complaint ?? "",
+      diagnosis: w.diagnosis ?? "",
+      km: w.km,
+      fuel: w.fuel,
+      checklist: w.checklist ?? [],
+      promisedOn: w.promised_on,
+      discountCents: Number(w.discount_cents),
+      shareToken: w.share_token,
+      sentAt: w.sent_at,
+      approvedAt: w.approved_at,
+      approvedByName: w.approved_by_name,
+      approvalChannel: w.approval_channel,
+      deliveredAt: w.delivered_at,
+      totalCents: w.total_cents === null ? null : Number(w.total_cents),
+      canceledAt: w.canceled_at,
+      cancelReason: w.cancel_reason,
+      nextServiceOn: w.next_service_on,
+      nextServiceNote: w.next_service_note ?? "",
+      createdBy: w.created_by,
+      createdAt: w.created_at,
+    })),
+    workOrderItems: rows(workOrderItems).map((i): WorkOrderItem => ({
+      id: i.id,
+      workOrderId: i.work_order_id,
+      kind: i.kind,
+      serviceId: i.service_id,
+      description: i.description,
+      quantity: i.quantity,
+      unitCents: Number(i.unit_cents),
+      warrantyDays: i.warranty_days,
+      status: i.status,
+      addedBy: i.added_by,
+      createdAt: i.created_at,
+    })),
+    workOrderEvents: rows(workOrderEvents).map((e): WorkOrderEvent => ({
+      id: e.id,
+      workOrderId: e.work_order_id,
+      description: e.description,
+      actorId: e.actor_id,
+      createdAt: e.created_at,
+    })),
+    workOrderPhotos: photoRows
+      .filter((p) => signed.has(p.path))
+      .map((p): WorkOrderPhoto => ({
+        id: p.id,
+        workOrderId: p.work_order_id,
+        url: signed.get(p.path)!,
+        caption: p.caption ?? "",
+        createdBy: p.created_by,
+        createdAt: p.created_at,
+      })),
     subscriptions: rows(subscriptions).map((s): Subscription => ({
       id: s.id,
       clientId: s.client_id,
@@ -476,6 +563,7 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
       packageId: a.package_id ?? null,
       subscriptionId: a.subscription_id ?? null,
       period: a.period ?? null,
+      workOrderId: a.work_order_id ?? null,
     })),
     movements: rows(movements).map((m): Movement => ({
       id: m.id,

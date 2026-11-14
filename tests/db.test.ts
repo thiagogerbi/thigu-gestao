@@ -1794,3 +1794,287 @@ describe("horário, caixa, comissões, turmas e agendamento online no banco", ()
     ).rejects.toThrow(/duplicate key|unique/);
   });
 });
+
+describe("oficina no banco", () => {
+  let O = ""; // oficina da Ana
+  let atend = "";
+  let mec = "";
+  let mec2 = "";
+  let fin = "";
+  let resMec = "";
+  let resMec2 = "";
+  let cli = "";
+  let car = "";
+
+  const open = (user: string, request = randomUUID(), resource: string | null = resMec, item = car, client = cli) =>
+    as(user, () =>
+      one<{ r: { id: string; number: number; duplicate: boolean } }>(
+        "select public.open_work_order($1, $2, $3, 'Barulho no freio', 30000, '1/2', '[\"Estepe\"]'::jsonb, null, $4) as r",
+        [client, item, resource, request],
+      ),
+    );
+  const addItem = (user: string, wo: string, kind: string, cents: number, desc = "Item") =>
+    as(user, () =>
+      one<{ id: string }>("select public.add_work_order_item($1, $2, null, $3, 1, $4, 90) as id", [
+        wo,
+        kind,
+        desc,
+        cents,
+      ]),
+    );
+
+  beforeAll(async () => {
+    atend = await newUser("atend@oficina.test");
+    mec = await newUser("mec@oficina.test");
+    mec2 = await newUser("mec2@oficina.test");
+    fin = await newUser("fin@oficina.test");
+    O = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Oficina', 'veiculos') as id"))).id;
+    await inviteAndAccept(O, U.ana, "atend@oficina.test", "{recepcao}", atend);
+    await inviteAndAccept(O, U.ana, "mec@oficina.test", "{profissional}", mec);
+    await inviteAndAccept(O, U.ana, "mec2@oficina.test", "{profissional}", mec2);
+    await inviteAndAccept(O, U.ana, "fin@oficina.test", "{financeiro}", fin);
+    await as(U.ana, async () => {
+      resMec = (
+        await one<{ id: string }>(
+          "insert into resources (company_id, name, user_id) values ($1, 'Rogério', $2) returning id",
+          [O, mec],
+        )
+      ).id;
+      resMec2 = (
+        await one<{ id: string }>(
+          "insert into resources (company_id, name, user_id) values ($1, 'Sérgio', $2) returning id",
+          [O, mec2],
+        )
+      ).id;
+    });
+    cli = (
+      await as(atend, () =>
+        one<{ id: string }>(
+          "insert into clients (company_id, name, phone, owner_id) values ($1, 'Gustavo', '(11) 90000-6001', $2) returning id",
+          [O, atend],
+        ),
+      )
+    ).id;
+    car = (
+      await as(atend, () =>
+        one<{ id: string }>(
+          "insert into client_items (company_id, client_id, kind, name, plate, created_by) values ($1, $2, 'veiculo', 'Onix', 'FHK2B31', $3) returning id",
+          [O, cli, atend],
+        ),
+      )
+    ).id;
+  });
+
+  it("placa única por empresa e no formato certo; só a atendente abre OS, numerada sem duplicar", async () => {
+    await expect(
+      as(atend, () =>
+        db.query(
+          "insert into client_items (company_id, client_id, kind, name, plate, created_by) values ($1, $2, 'veiculo', 'Outro', 'FHK2B31', $3)",
+          [O, cli, atend],
+        ),
+      ),
+    ).rejects.toThrow(/client_items_plate_unique/);
+    await expect(
+      as(atend, () =>
+        db.query(
+          "insert into client_items (company_id, client_id, kind, name, plate, created_by) values ($1, $2, 'veiculo', 'Outro', 'fhk-2b31', $3)",
+          [O, cli, atend],
+        ),
+      ),
+    ).rejects.toThrow(/check constraint/);
+    const req = randomUUID();
+    const first = await open(atend, req);
+    expect(first.r).toMatchObject({ number: 1, duplicate: false });
+    expect((await open(atend, req)).r).toMatchObject({ id: first.r.id, duplicate: true });
+    expect((await open(U.ana)).r.number).toBe(2);
+    await expect(open(mec)).rejects.toThrow(/não permite abrir/);
+    await expect(open(fin)).rejects.toThrow(/não permite abrir/);
+    // ninguém grava direto na tabela
+    await expect(
+      as(U.ana, () => db.query("update work_orders set stage = 'entregue' where company_id = $1", [O])),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it("orçamento, aprovação pelo link (sem login), mecânico, desconto e entrega com parcelas", async () => {
+    const wo = (await open(atend, randomUUID(), resMec)).r.id;
+    const pads = (await addItem(mec, wo, "peca", 30000, "Pastilhas")).id;
+    const labor = (await addItem(mec, wo, "servico", 15000, "Troca")).id;
+    const extra = (await addItem(atend, wo, "servico", 40000, "Discos")).id;
+    await expect(addItem(mec2, wo, "peca", 100)).rejects.toThrow(/não encontrada/);
+    // o mecânico vê só as OS dele; o outro não vê esta
+    expect(await as(mec2, () => rows("select id from work_orders where id = $1", [wo]))).toHaveLength(0);
+    expect(await as(mec, () => rows("select id from work_orders where id = $1", [wo]))).toHaveLength(1);
+    // e passa a ver o cliente do carro, sem ser o responsável pelo cadastro
+    expect(await as(mec, () => rows("select id from clients where id = $1", [cli]))).toHaveLength(1);
+
+    await expect(as(atend, () => db.query("select public.set_work_order_discount($1, 9000)", [wo]))).rejects.toThrow(
+      /10%/,
+    );
+    await expect(as(mec, () => db.query("select public.set_work_order_discount($1, 100)", [wo]))).rejects.toThrow(
+      /não permite alterar/,
+    );
+    await as(atend, () => db.query("select public.set_work_order_discount($1, 5000)", [wo]));
+
+    const token = (await as(atend, () => one<{ t: string }>("select public.send_work_order($1) as t", [wo]))).t;
+    const anon = async <T>(fn: () => Promise<T>) => {
+      await db.exec("set role anon");
+      try {
+        return await fn();
+      } finally {
+        await db.exec("reset role");
+      }
+    };
+    const info = (
+      await anon(() =>
+        one<{ i: { number: number; items: { id: string }[]; vehicle: { plate: string } } }>(
+          "select public.public_work_order($1) as i",
+          [token],
+        ),
+      )
+    ).i;
+    expect(info.items).toHaveLength(3);
+    expect(info.vehicle.plate).toBe("FHK2B31");
+    expect(
+      (await anon(() => one<{ i: unknown }>("select public.public_work_order($1) as i", [randomUUID()]))).i,
+    ).toBeNull();
+    await expect(anon(() => db.query("select * from work_orders"))).rejects.toThrow(/permission denied/);
+
+    await expect(
+      as(atend, () => db.query("select public.deliver_work_order($1, '[]'::jsonb, null, '')", [wo])),
+    ).rejects.toThrow(/aguardando a decisão/);
+    const decided = await anon(() =>
+      one<{ r: { approved: number; refused: number } }>(
+        "select public.public_approve_work_order($1, $2::uuid[], 'Gustavo Lima') as r",
+        [token, [pads, labor]],
+      ),
+    );
+    expect(decided.r).toEqual({ approved: 2, refused: 1 });
+    const after = await one<{ stage: string; approval_channel: string; approved_by_name: string }>(
+      "select stage, approval_channel, approved_by_name from work_orders where id = $1",
+      [wo],
+    );
+    expect(after).toEqual({ stage: "servico", approval_channel: "link", approved_by_name: "Gustavo Lima" });
+    await expect(
+      anon(() => db.query("select public.public_approve_work_order($1, '{}'::uuid[], 'Outro')", [token])),
+    ).rejects.toThrow(/Não há itens/);
+    await expect(as(atend, () => db.query("select public.remove_work_order_item($1)", [extra]))).rejects.toThrow(
+      /já decidiu/,
+    );
+
+    await expect(as(mec, () => db.query("select public.move_work_order($1, 'orcamento')", [wo]))).rejects.toThrow(
+      /mecânico move/,
+    );
+    await as(mec, () => db.query("select public.move_work_order($1, 'pronto')", [wo]));
+    await expect(
+      as(mec, () => db.query("select public.deliver_work_order($1, '[]'::jsonb, null, '')", [wo])),
+    ).rejects.toThrow(/não permite entregar/);
+
+    const plan = JSON.stringify([
+      { number: 1, amount_cents: 20000, due_date: "2026-11-14" },
+      { number: 2, amount_cents: 20000, due_date: "2026-12-14" },
+    ]);
+    const bad = JSON.stringify([{ number: 1, amount_cents: 20000, due_date: "2026-11-14" }]);
+    await expect(
+      as(fin, () => db.query("select public.deliver_work_order($1, $2::jsonb, null, '')", [wo, bad])),
+    ).rejects.toThrow(/soma das parcelas/);
+    const done = await as(fin, () =>
+      one<{ r: { total_cents: number } }>(
+        "select public.deliver_work_order($1, $2::jsonb, '2027-05-14', 'Troca de óleo') as r",
+        [wo, plan],
+      ),
+    );
+    expect(Number(done.r.total_cents)).toBe(40000);
+    const accs = await rows<{ origin: string; amount_cents: number }>(
+      "select origin, amount_cents from accounts where work_order_id = $1 order by installment_number",
+      [wo],
+    );
+    expect(accs.map((a) => [a.origin, Number(a.amount_cents)])).toEqual([
+      ["os", 20000],
+      ["os", 20000],
+    ]);
+    await expect(addItem(atend, wo, "peca", 100)).rejects.toThrow(/já foi entregue/);
+    expect(
+      (await rows("select id from work_order_events where work_order_id = $1", [wo])).length,
+    ).toBeGreaterThanOrEqual(5);
+  });
+
+  it("fotos: só quem mexe na OS, no caminho dela e até o limite do plano", async () => {
+    const wo = (await open(atend, randomUUID(), resMec)).r.id;
+    const photo = (user: string, path: string) =>
+      as(user, () =>
+        db.query(
+          "insert into work_order_photos (company_id, work_order_id, path, created_by) values ($1, $2, $3, $4)",
+          [O, wo, path, user],
+        ),
+      );
+    await photo(mec, `${O}/${wo}/a.webp`);
+    await expect(photo(mec2, `${O}/${wo}/b.webp`)).rejects.toThrow(/row-level security/);
+    await expect(photo(mec, `${O}/outra/c.webp`)).rejects.toThrow(/row-level security/);
+    await db.query("update companies set plan = 'essencial' where id = $1", [O]);
+    for (const n of ["d", "e", "f"]) await photo(atend, `${O}/${wo}/${n}.webp`);
+    await expect(photo(atend, `${O}/${wo}/g.webp`)).rejects.toThrow(/limite do plano/);
+    await db.query("update companies set plan = 'empresa' where id = $1", [O]);
+    await expect(db.query("delete from work_order_photos where work_order_id = $1", [wo])).rejects.toThrow();
+  });
+
+  it("carro muda de dono e o histórico continua com a placa; comissão sobre a mão de obra", async () => {
+    const novo = (
+      await as(atend, () =>
+        one<{ id: string }>(
+          "insert into clients (company_id, name, owner_id) values ($1, 'Novo dono', $2) returning id",
+          [O, atend],
+        ),
+      )
+    ).id;
+    // há OS em andamento com este carro: não transfere
+    await expect(as(atend, () => db.query("select public.transfer_vehicle($1, $2)", [car, novo]))).rejects.toThrow(
+      /em andamento/,
+    );
+    const busy = await rows<{ id: string }>(
+      "select id from work_orders where item_id = $1 and stage not in ('entregue', 'cancelada')",
+      [car],
+    );
+    for (const b of busy)
+      await as(atend, () => db.query("select public.cancel_work_order($1, 'teste de transferência')", [b.id]));
+    await as(atend, () => db.query("select public.transfer_vehicle($1, $2)", [car, novo]));
+    expect(
+      (await one<{ client_id: string }>("select client_id from client_items where id = $1", [car])).client_id,
+    ).toBe(novo);
+    expect((await rows("select id from work_orders where item_id = $1", [car])).length).toBeGreaterThan(1);
+    await expect(as(mec, () => db.query("select public.transfer_vehicle($1, $2)", [car, cli]))).rejects.toThrow();
+
+    // OS entregue em outubro com mão de obra de R$ 200 (aprovada) e peça de R$ 500: comissão de 30% só sobre a mão de obra
+    await as(U.ana, () =>
+      db.query(
+        "insert into commission_rules (company_id, resource_id, service_id, percent_bp) values ($1, null, null, 3000)",
+        [O],
+      ),
+    );
+    const wo = (await open(atend, randomUUID(), resMec2, car, novo)).r.id;
+    await addItem(atend, wo, "servico", 20000, "Mão de obra");
+    await addItem(atend, wo, "peca", 50000, "Peça");
+    await as(atend, async () => {
+      const ids = (await rows<{ id: string }>("select id from work_order_items where work_order_id = $1", [wo])).map(
+        (r) => r.id,
+      );
+      await db.query("select public.approve_work_order($1, $2::uuid[], 'presencial', 'Novo dono')", [wo, ids]);
+    });
+    await as(atend, () =>
+      db.query("select public.deliver_work_order($1, $2::jsonb, null, '')", [
+        wo,
+        JSON.stringify([{ number: 1, amount_cents: 70000, due_date: "2026-10-20" }]),
+      ]),
+    );
+    // simula a entrega no mês passado (horário de Brasília)
+    await db.query("alter table work_orders disable trigger all");
+    await db.query("update work_orders set delivered_at = '2026-10-20 15:00+00' where id = $1", [wo]);
+    await db.query("alter table work_orders enable trigger all");
+    const r = await as(fin, () =>
+      one<{ r: { appointments: number; base_cents: number; amount_cents: number } }>(
+        "select public.close_commissions($1, '2026-10-01') as r",
+        [resMec2],
+      ),
+    );
+    expect(r.r).toMatchObject({ appointments: 1, base_cents: 20000, amount_cents: 6000 });
+  });
+});

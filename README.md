@@ -173,6 +173,21 @@ Ao criar a empresa, a pessoa escolhe o ramo (dá para trocar depois em **Minha e
 - Quem vende pacotes e cria mensalidades: administrador, gestor, recepção e financeiro. O profissional vê os pacotes dos próprios pacientes. As cobranças só aparecem para quem vê o financeiro, que também tem o botão "Cobrar pelo WhatsApp" nas mensalidades atrasadas.
 - No celular, quando há mais de 5 itens no menu, os últimos vão para "Mais".
 
+### Oficina: ordem de serviço (Fase 3)
+
+Para mecânica, funilaria, auto elétrica e lava-rápido (ramo "Oficina e serviços automotivos"). Tela **Oficina**.
+
+- **Veículo:** item do cliente com placa (antiga ou Mercosul, gravada sem hífen e única na empresa), modelo, marca, ano, cor e combustível. Quando o carro muda de dono, "Mudou de dono" transfere o veículo e o histórico continua com a placa (`transfer_vehicle`).
+- **Nova OS pela placa:** carro conhecido já traz o cliente e avisa se ele já está no pátio; carro novo e cliente novo são cadastrados ali mesmo. Entrada com o relato do cliente, km, combustível, itens conferidos (estepe, documento…) e avarias, mecânico e previsão de entrega. Numeração por empresa, sem duplicar (`open_work_order`).
+- **Orçamento:** peças e mão de obra com quantidade, valor e garantia. O mecânico inclui itens, fotos e o diagnóstico; todo item novo entra "aguardando cliente". Desconto: o atendimento dá até 10% do orçamento; dono e gestor, à vontade.
+- **Aprovação pelo link:** "Gerar link do orçamento" e "Enviar pelo WhatsApp" (1 clique, mensagem pronta). O cliente abre `/orcamento/[código]` no celular, marca o que autoriza e confirma com o nome; fica registrado com data, hora e canal. O link vale 30 dias e a página só chama duas funções públicas (`public_work_order`, `public_approve_work_order`), sem ler tabelas. Também dá para registrar a aprovação feita na oficina, por telefone ou WhatsApp. Item decidido não sai mais do orçamento.
+- **Quadro do pátio:** aguardando orçamento, aguardando aprovação, aguardando peça, em serviço, pronto. Atrasadas em vermelho; busca por placa, cliente, modelo ou número. O mecânico vê só as OS dele (e os clientes delas) e move entre aguardando peça, em serviço e pronto. "Avisar que está pronto" pelo WhatsApp.
+- **Entrega e cobrança:** não entrega com item aguardando o cliente. O total (aprovados − desconto) vira conta a receber à vista ou em até 12 parcelas (`origin = 'os'`). Garantia de cada item conta a partir da entrega; a próxima revisão (ex.: troca de óleo em 6 meses) entra na lista "Revisões chegando", com lembrete pelo WhatsApp.
+- **Fotos:** tiradas no celular, reduzidas no próprio aparelho (até 1280 px, WebP) e guardadas no Supabase Storage, bucket privado `os-fotos` (caminho `empresa/os/arquivo`). As mesmas regras de acesso da OS valem para o arquivo; links temporários de 1 hora. Limite por OS: 4 (Essencial), 8 (Equipe), 12 (Empresa). Nada é apagado.
+- **Comissão do mecânico:** os mecânicos são cadastrados em Serviços e equipe; a comissão do mês soma a mão de obra aprovada das OS entregues no mês (peças não entram), pela mesma regra mais específica dos outros ramos.
+- **Linha do tempo** de cada OS (abertura, envio, aprovação, etapas, entrega) e a seção **Oficina** na ficha do cliente.
+- `/orcamento/exemplo` mostra um orçamento da prévia (Auto Center Kennedy) e não grava nada.
+
 ### Horário de trabalho, caixa, comissões, turmas e agendamento online
 
 Horários no fuso de Brasília (UTC−3 fixo), igual no aplicativo (`hours.ts`) e no banco.
@@ -200,7 +215,7 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 
 ## O que funciona, o que é simulado e o que está pendente
 
-### Testado automaticamente (`npm test` — 137 testes)
+### Testado automaticamente (`npm test` — 148 testes)
 
 - Regras de dinheiro, datas, divisão de parcelas, saldo e situação das contas, totais de proposta e matriz de permissões.
 - **Caso de aceitação completo** no motor da prévia **e no banco** (migrações reais rodando no PGlite):
@@ -210,6 +225,7 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 - Ramos e papéis novos, no motor da prévia **e no banco**: o catálogo do banco é igual ao do aplicativo; só o administrador troca o ramo e ninguém troca o plano; recepção e caixa cuidam dos clientes de todos e o profissional só dos próprios; nenhum dos três vê negociações, vendas ou financeiro; pets só existem com o módulo ligado, são lidos por quem vê o tutor e gravados por quem edita o tutor, nunca entre empresas; trocar de ramo não apaga os campos do ramo anterior.
 - Pacotes e mensalidades, no motor da prévia **e no banco**: venda em parcelas sem duplicar; só quem pode vende; atendido com pacote usa sessão sem gerar conta e não passa do total; desfazer devolve a sessão; pacote de outro cliente, vencido ou encerrado não entra no horário; mensalidade gera uma cobrança por mês até o mês atual, sem duplicar, e para ao ser cancelada; empresas sem o módulo não têm nada disso.
 - Agenda, no motor da prévia **e no banco**: cada profissional vê e marca só na própria agenda; quem atende um paciente do colega passa a vê-lo, mas não edita a ficha; a situação não muda direto na tabela; atendido gera a conta a receber, desfazer cancela, e com pagamento registrado não desfaz; falta cobrada vira conta; horário encerrado não se remarca; a ficha de atendimento só é lida por quem escreveu e não pode ser alterada nem apagada; empresas sem o módulo não têm agenda.
+- Oficina, no motor da prévia **e no banco**: placa única e no formato certo; só o atendimento abre OS, com número sem buraco e sem duplicar; o mecânico só mexe nas OS dele, não dá desconto, não entrega e só move entre peça, serviço e pronto; desconto do atendimento até 10%; aprovação pelo link sem login, que recusa código inválido e não decide duas vezes; não entrega com item pendente; parcelas precisam somar o total; fotos só no caminho da OS e até o limite do plano; carro com OS aberta não muda de dono; comissão só sobre a mão de obra entregue no mês (aplicativo e banco chegam ao mesmo valor).
 - Horário, caixa, comissões, turmas e agendamento online, no motor da prévia **e no banco**: bloqueio só na agenda que a pessoa cuida; um caixa aberto por vez, venda e recebimento sem duplicar, esperado da gaveta certo, só financeiro ou dono fecham; recepção e caixa não veem contas a pagar; comissão pela regra mais específica, com o mês contado no horário de Brasília, fechada uma vez e só depois do mês acabar (aplicativo e banco chegam ao mesmo valor); turma não passa das vagas e o instrutor marca presença dos próprios alunos; o link público só funciona ligado, recusa horário fora do atendimento, ocupado ou muito próximo, não cria cadastro repetido e limita 3 horários por celular.
 - Convites: o vínculo só existe depois do aceite; o convite espera quem ainda não tem conta; e-mail não confirmado não vê nem aceita; recusar e cancelar não criam vínculo; só o administrador convida e cancela; quem teve o acesso removido só volta aceitando um novo convite.
 
@@ -249,6 +265,7 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 
 - Ramos: as telas de negociações, propostas, financeiro, tarefas e o guia da prévia ainda dizem "cliente" em todos os ramos; a troca de nome vale para o menu, a lista, a ficha, o cadastro e a visão geral.
 - Lembrete automático pelo WhatsApp oficial: depende de conta WhatsApp Business verificada pela Meta (ver a conversa da Fase 2).
+- Oficina: fotos dependem de o bucket `os-fotos` existir no Supabase (a migração cria quando o esquema `storage` existe; os testes locais não têm Storage). Busca automática de dados pela placa (serviço pago), estoque de peças (Fase 4) e nota fiscal de serviço ficam para depois.
 - Caixa: sangria e reforço no meio do dia; estoque dos produtos.
 - Agendamento online: o cliente desmarcar pelo link; escolher "qualquer profissional".
 - Mensalidades: cobrança automática no cartão (hoje a cobrança é criada, mas o pagamento é registrado à mão).

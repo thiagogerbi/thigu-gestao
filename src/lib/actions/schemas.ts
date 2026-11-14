@@ -2,6 +2,7 @@ import { LOGO_DATA_URL_RE, LOGO_MAX_CHARS } from "@/lib/domain/branding";
 import { isISODate } from "@/lib/domain/dates";
 import { isValidDocument, normalizeDocument } from "@/lib/domain/document";
 import { SEGMENT_IDS } from "@/lib/domain/segments";
+import { PHOTO_MAX_CHARS } from "@/lib/domain/work-orders";
 import type { Segment } from "@/lib/domain/types";
 import { z } from "zod";
 
@@ -85,10 +86,84 @@ export const actionSchema = z.discriminatedUnion("type", [
     type: z.literal("item.save"),
     id: id.optional(),
     clientId: id,
-    kind: z.enum(["pet"]),
+    kind: z.enum(["pet", "veiculo"]),
     name: text(80).min(1, "Digite o nome."),
     details: fieldValues,
     alert: text(200),
+    /** Só veículos: placa (com ou sem hífen). */
+    plate: z.string().max(10).optional(),
+  }),
+  z.object({ type: z.literal("vehicle.transfer"), itemId: id, clientId: id }),
+  z.object({
+    type: z.literal("workOrder.open"),
+    clientId: id,
+    itemId: id,
+    resourceId: id.nullable(),
+    complaint: text(1000),
+    km: z.number().int().min(0).max(3_000_000).nullable(),
+    fuel: z.enum(["reserva", "1/4", "1/2", "3/4", "cheio"]).nullable(),
+    checklist: z.array(text(60).min(1)).max(30),
+    promisedOn: date.nullable(),
+    requestId: z.string().uuid(),
+  }),
+  z.object({
+    type: z.literal("workOrder.save"),
+    id,
+    resourceId: id.nullable(),
+    complaint: text(1000),
+    km: z.number().int().min(0).max(3_000_000).nullable(),
+    fuel: z.enum(["reserva", "1/4", "1/2", "3/4", "cheio"]).nullable(),
+    checklist: z.array(text(60).min(1)).max(30),
+    promisedOn: date.nullable(),
+  }),
+  z.object({ type: z.literal("workOrder.diagnosis"), id, text: text(2000) }),
+  z.object({
+    type: z.literal("workOrder.addItem"),
+    workOrderId: id,
+    kind: z.enum(["peca", "servico"]),
+    serviceId: id.nullable(),
+    description: text(120).min(1, "Descreva a peça ou o serviço."),
+    quantity: z.number().int().min(1, "Use pelo menos 1.").max(999),
+    unitCents: cents,
+    warrantyDays: z.number().int().min(1).max(3650).nullable(),
+  }),
+  z.object({ type: z.literal("workOrder.removeItem"), id }),
+  z.object({ type: z.literal("workOrder.discount"), id, discountCents: cents }),
+  z.object({ type: z.literal("workOrder.send"), id }),
+  z.object({
+    type: z.literal("workOrder.approve"),
+    id,
+    approvedIds: z.array(id).max(200),
+    channel: z.enum(["presencial", "telefone", "whatsapp"]),
+    name: text(120).min(2, "Digite o nome de quem aprovou."),
+  }),
+  z.object({
+    type: z.literal("workOrder.move"),
+    id,
+    stage: z.enum(["orcamento", "aprovacao", "peca", "servico", "pronto"]),
+  }),
+  z.object({
+    type: z.literal("workOrder.deliver"),
+    id,
+    plan: z
+      .array(z.object({ number: z.number().int().min(1).max(36), amountCents: positiveCents, dueDate: date }))
+      .max(36),
+    nextServiceOn: date.nullable(),
+    nextServiceNote: text(200),
+  }),
+  z.object({
+    type: z.literal("workOrder.cancel"),
+    id,
+    reason: text(300).min(3, "Escreva o motivo do cancelamento."),
+  }),
+  z.object({
+    type: z.literal("workOrder.addPhoto"),
+    workOrderId: id,
+    dataUrl: z
+      .string()
+      .max(PHOTO_MAX_CHARS, "A foto ficou grande demais.")
+      .regex(/^data:image\/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$/, "Foto inválida."),
+    caption: text(120),
   }),
   z.object({ type: z.literal("item.setActive"), id, active: z.boolean() }),
   z.object({

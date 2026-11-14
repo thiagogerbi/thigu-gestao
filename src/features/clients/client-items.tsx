@@ -6,13 +6,15 @@ import { IconAlert, IconEdit, IconPlus } from "@/components/ui/icons";
 import { useToast } from "@/components/ui/toast";
 import { ClientSection } from "@/features/clients/client-section";
 import { ExtraFieldsView } from "@/features/clients/extra-fields";
+import { can } from "@/lib/domain/permissions";
 import { ITEM_KINDS } from "@/lib/domain/segments";
+import { formatPlate } from "@/lib/domain/work-orders";
 import type { ClientItem, ItemKind } from "@/lib/domain/types";
 import { useAction, useBackend } from "@/state/backend-context";
 
 /** Pets do cliente na ficha: aviso em destaque, dados, e arquivar em vez de apagar. */
 export function ClientItems({ clientId, kind, editable }: { clientId: string; kind: ItemKind; editable: boolean }) {
-  const { data } = useBackend();
+  const { data, me } = useBackend();
   const dialogs = useDialogs();
   const toast = useToast();
   const { exec, pending } = useAction();
@@ -48,7 +50,14 @@ export function ClientItems({ clientId, kind, editable }: { clientId: string; ki
           {active.map((item) => (
             <li key={item.id} className="rounded-lg border border-line p-3">
               <div className="flex items-start justify-between gap-2">
-                <p className="font-display text-base font-bold">{item.name}</p>
+                <p className="font-display text-base font-bold">
+                  {item.plate && (
+                    <span className="mr-2 rounded border border-ink/30 bg-white px-1.5 py-0.5 font-mono text-sm tracking-wider">
+                      {formatPlate(item.plate)}
+                    </span>
+                  )}
+                  {item.name}
+                </p>
                 {editable && (
                   <IconButton
                     label={`Editar ${item.name}`}
@@ -78,6 +87,16 @@ export function ClientItems({ clientId, kind, editable }: { clientId: string; ki
                   onClick={() => setActive(item, false)}
                 >
                   Arquivar {item.name}
+                </Button>
+              )}
+              {kind === "veiculo" && can(me.roles, "os.editar") && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="mt-1"
+                  onClick={() => dialogs.open({ kind: "vehicleTransfer", itemId: item.id })}
+                >
+                  Mudou de dono
                 </Button>
               )}
             </li>

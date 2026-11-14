@@ -13,6 +13,15 @@ import { ClassDialog } from "@/features/classes/class-dialog";
 import { EnrollDialog } from "@/features/classes/enroll-dialog";
 import { CommissionRuleDialog } from "@/features/commissions/commission-rule-dialog";
 import { ProductDialog } from "@/features/services/product-dialog";
+import {
+  VehicleTransferDialog,
+  WorkOrderApproveDialog,
+  WorkOrderCancelDialog,
+  WorkOrderDeliverDialog,
+  WorkOrderEditDialog,
+  WorkOrderItemDialog,
+  WorkOrderNewDialog,
+} from "@/features/workshop/work-order-dialogs";
 import { PackageDialog } from "@/features/recurring/package-dialog";
 import { SubscriptionDialog } from "@/features/recurring/subscription-dialog";
 import { ResourceDialog } from "@/features/services/resource-dialog";
@@ -66,6 +75,20 @@ function renderDialog(spec: DialogSpec, props: DialogProps) {
       return <ClassDialog {...props} classId={spec.classId} />;
     case "enroll":
       return <EnrollDialog {...props} classId={spec.classId} />;
+    case "workOrderNew":
+      return <WorkOrderNewDialog {...props} clientId={spec.clientId} itemId={spec.itemId} />;
+    case "workOrderEdit":
+      return <WorkOrderEditDialog {...props} workOrderId={spec.workOrderId} />;
+    case "woItem":
+      return <WorkOrderItemDialog {...props} workOrderId={spec.workOrderId} itemKind={spec.itemKind} />;
+    case "woApprove":
+      return <WorkOrderApproveDialog {...props} workOrderId={spec.workOrderId} />;
+    case "woDeliver":
+      return <WorkOrderDeliverDialog {...props} workOrderId={spec.workOrderId} />;
+    case "woCancel":
+      return <WorkOrderCancelDialog {...props} workOrderId={spec.workOrderId} />;
+    case "vehicleTransfer":
+      return <VehicleTransferDialog {...props} itemId={spec.itemId} />;
     case "package":
       return <PackageDialog {...props} clientId={spec.clientId} />;
     case "subscription":

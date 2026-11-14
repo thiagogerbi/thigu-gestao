@@ -17,6 +17,7 @@ import {
   IconUndo,
   IconUsers,
   IconWallet,
+  IconWrench,
 } from "@/components/ui/icons";
 import { Modal } from "@/components/ui/overlay";
 import { cx } from "@/components/ui/styles";
@@ -52,6 +53,14 @@ function useNavItems() {
       label: rec.label,
       icon: IconRepeat,
       show: rec.enabled && (rec.canSell || rec.seesMoney),
+    },
+    {
+      href: `${basePath}/oficina`,
+      label: "Oficina",
+      icon: IconWrench,
+      show:
+        moduleAvailable(data.company, "ordem_servico") &&
+        (can(me.roles, "os.ver_todas") || data.resources.some((r) => r.userId === me.userId)),
     },
     {
       href: `${basePath}/turmas`,

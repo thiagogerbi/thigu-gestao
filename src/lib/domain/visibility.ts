@@ -16,7 +16,7 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
   const on = (m: Parameters<typeof moduleEnabled>[1]) => moduleEnabled(data.company, m);
 
   // Agenda: quem marca para todos vê tudo; o profissional, só as agendas ligadas a ele.
-  const resources = on("agenda") ? data.resources : [];
+  const resources = on("agenda") || on("ordem_servico") ? data.resources : [];
   const myResources = new Set(resources.filter((r) => r.userId === me).map((r) => r.id));
   const appointments = !on("agenda")
     ? []
@@ -41,6 +41,14 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
     on("turmas") ? data.enrollments.filter((e) => !e.endedOn && myClasses.has(e.classId)).map((e) => e.clientId) : [],
   );
 
+  // Oficina: atendimento e financeiro veem todas as OS; o mecânico, só as dele.
+  const workOrders = !on("ordem_servico")
+    ? []
+    : can(roles, "os.ver_todas")
+      ? data.workOrders
+      : data.workOrders.filter((w) => w.resourceId !== null && myResources.has(w.resourceId));
+  const woIds = new Set(workOrders.map((w) => w.id));
+
   const deals = allCrm ? data.deals : data.deals.filter((d) => d.ownerId === me);
   const dealIds = new Set(deals.map((d) => d.id));
   const clients = allClients
@@ -51,7 +59,8 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
           deals.some((d) => d.clientId === c.id) ||
           // quem atende um paciente de um colega precisa ver o nome dele na própria agenda
           appointments.some((a) => a.clientId === c.id) ||
-          myStudents.has(c.id),
+          myStudents.has(c.id) ||
+          workOrders.some((w) => w.clientId === c.id),
       );
   const clientIds = new Set(clients.map((c) => c.id));
 
@@ -100,6 +109,10 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
     attendance: on("turmas")
       ? data.attendance.filter((a) => clientIds.has(a.clientId) || myClasses.has(a.classId))
       : [],
+    workOrders,
+    workOrderItems: data.workOrderItems.filter((i) => woIds.has(i.workOrderId)),
+    workOrderEvents: data.workOrderEvents.filter((e) => woIds.has(e.workOrderId)),
+    workOrderPhotos: data.workOrderPhotos.filter((p) => woIds.has(p.workOrderId)),
     deals,
     tasks: allCrm
       ? data.tasks

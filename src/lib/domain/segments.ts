@@ -40,7 +40,7 @@ export const MODULES: Record<ModuleId, ModuleInfo> = {
   mensalidades: { label: "Mensalidades", minPlan: "essencial", built: true },
   turmas: { label: "Turmas e presença", minPlan: "essencial", built: true },
   caixa: { label: "Caixa do dia", minPlan: "essencial", built: true },
-  ordem_servico: { label: "Ordem de serviço", minPlan: "essencial", built: false },
+  ordem_servico: { label: "Ordem de serviço", minPlan: "essencial", built: true },
   estoque: { label: "Estoque", minPlan: "essencial", built: false },
   pedidos: { label: "Pedidos com prazo", minPlan: "essencial", built: false },
   comissoes: { label: "Comissões", minPlan: "equipe", built: true },
@@ -173,11 +173,12 @@ export const SEGMENTS: Record<Segment, SegmentInfo> = {
   veiculos: {
     label: "Oficina e serviços automotivos",
     examples: "Mecânica, funilaria e pintura, auto elétrica, lava-rápido",
-    modules: ["ordem_servico", "servicos", "lembretes", "comissoes"],
+    modules: ["itens", "ordem_servico", "servicos", "lembretes", "comissoes"],
     client: ["cliente", "clientes"],
     roles: ["admin", "recepcao", "profissional", "financeiro"],
     roleLabels: { recepcao: "Atendente", profissional: "Mecânico" },
     clientFields: [],
+    itemKind: "veiculo",
   },
   balcao: {
     label: "Loja e venda no balcão",
@@ -270,6 +271,23 @@ export const ITEM_KINDS: Record<ItemKind, ItemKindInfo> = {
       { key: "porte", label: "Porte", type: "select", options: ["Pequeno", "Médio", "Grande"] },
       { key: "peso", label: "Peso (kg)", type: "text" },
       { key: "nascimento", label: "Data de nascimento", type: "date" },
+    ],
+  },
+  veiculo: {
+    noun: ["veículo", "veículos"],
+    nameLabel: "Modelo",
+    nameHint: "Ex.: Gol 1.0, Onix LT, Strada",
+    alertHint: "Aparece em destaque na ficha. Ex.: alarme sensível, chave reserva com o cliente.",
+    fields: [
+      { key: "marca", label: "Marca", type: "text" },
+      { key: "ano", label: "Ano", type: "text", hint: "Ex.: 2019/2020" },
+      { key: "cor", label: "Cor", type: "text" },
+      {
+        key: "combustivel",
+        label: "Combustível",
+        type: "select",
+        options: ["Flex", "Gasolina", "Etanol", "Diesel", "GNV", "Elétrico", "Híbrido"],
+      },
     ],
   },
 };

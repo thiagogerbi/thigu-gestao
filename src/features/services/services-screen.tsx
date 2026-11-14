@@ -22,6 +22,9 @@ export function ServicesScreen() {
   const name = useMemberName();
   const { exec, pending } = useAction();
   const agendaOn = moduleAvailable(data.company, "agenda");
+  // na oficina, quem atende são os mecânicos (sem agenda de horários)
+  const peopleOn = agendaOn || moduleAvailable(data.company, "ordem_servico");
+  const peopleTitle = agendaOn ? "Quem atende" : "Mecânicos";
   const servicesOn = moduleAvailable(data.company, "servicos");
   const productsOn = moduleAvailable(data.company, "caixa") && can(me.roles, "produtos.gerenciar");
 
@@ -60,23 +63,26 @@ export function ServicesScreen() {
         }
       />
       <div className="grid gap-6 lg:grid-cols-2">
-        {agendaOn && (
+        {peopleOn && (
           <Card className="p-4" aria-labelledby="quem-atende">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 id="quem-atende" className="font-display text-lg font-bold">
-                Quem atende
+                {peopleTitle}
               </h2>
               <Button size="sm" onClick={() => dialogs.open({ kind: "resource" })}>
-                <IconPlus className="h-4 w-4" /> Nova agenda
+                <IconPlus className="h-4 w-4" /> {agendaOn ? "Nova agenda" : "Novo mecânico"}
               </Button>
             </div>
             <p className="mb-3 text-sm text-muted">
-              Uma agenda para cada pessoa ou sala. Ligada a alguém da equipe, essa pessoa vê e marca na própria agenda;
-              sem ligação, serve para quem não usa o sistema (ou para uma sala, mesa, cadeira).
+              {agendaOn
+                ? "Uma agenda para cada pessoa ou sala. Ligada a alguém da equipe, essa pessoa vê e marca na própria agenda; sem ligação, serve para quem não usa o sistema (ou para uma sala, mesa, cadeira)."
+                : "Quem pega as ordens de serviço. Ligado a alguém da equipe, o mecânico vê as OS dele no celular; sem ligação, serve para quem não usa o sistema (ex.: lava-rápido). A comissão é calculada por aqui."}
             </p>
             {withoutAgenda.length > 0 && (
               <div className="mb-3 rounded-lg bg-warn-50 p-3 text-sm">
-                <p className="font-semibold text-warn">Na equipe, mas sem agenda:</p>
+                <p className="font-semibold text-warn">
+                  {agendaOn ? "Na equipe, mas sem agenda:" : "Mecânicos da equipe ainda não cadastrados aqui:"}
+                </p>
                 <ul className="mt-1 grid gap-1">
                   {withoutAgenda.map((m) => (
                     <li key={m.userId} className="flex flex-wrap items-center justify-between gap-2">
@@ -89,7 +95,7 @@ export function ServicesScreen() {
                         disabled={pending}
                         onClick={() => quickCreate(m.userId, m.name)}
                       >
-                        Criar agenda
+                        {agendaOn ? "Criar agenda" : "Cadastrar"}
                       </Button>
                     </li>
                   ))}
@@ -97,7 +103,7 @@ export function ServicesScreen() {
               </div>
             )}
             {data.resources.length === 0 ? (
-              <p className="text-sm text-muted">Nenhuma agenda ainda.</p>
+              <p className="text-sm text-muted">{agendaOn ? "Nenhuma agenda ainda." : "Nenhum mecânico ainda."}</p>
             ) : (
               <ul className="divide-y divide-line">
                 {data.resources.map((r) => (
@@ -109,7 +115,7 @@ export function ServicesScreen() {
                       <p className="text-sm text-muted">
                         {r.userId ? `Ligada a ${name(r.userId)}` : "Sem acesso ao sistema"}
                       </p>
-                      <p className="text-sm text-muted">{hoursSummary(r.workHours)}</p>
+                      {agendaOn && <p className="text-sm text-muted">{hoursSummary(r.workHours)}</p>}
                     </div>
                     <IconButton
                       label={`Editar agenda de ${r.name}`}

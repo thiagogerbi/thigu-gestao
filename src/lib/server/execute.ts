@@ -33,6 +33,8 @@ import { toISODate } from "@/lib/domain/dates";
 import { workHoursError } from "@/lib/domain/hours";
 import { packageError, packageView, startsOnError } from "@/lib/domain/recurring";
 import { STAGE_LABEL, type Appointment, type AppointmentStatus, type Role, type WorkHours } from "@/lib/domain/types";
+import { isPlate, normalizePlate } from "@/lib/domain/work-orders";
+import { executeWorkOrder } from "@/lib/server/execute-work-orders";
 import type { ServerSupabase } from "@/lib/supabase/server";
 import "server-only";
 
@@ -175,7 +177,16 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
       const kind = ITEM_KINDS[a.kind];
       const details = cleanFields(kind.fields, a.details, "details");
       if (!details.ok) return fail("Alguns campos precisam de ajuste.", details.fieldErrors);
-      const values = { name: a.name, details: details.value, alert: a.alert };
+      const plate = a.kind === "veiculo" ? normalizePlate(a.plate ?? "") : null;
+      if (plate !== null && !isPlate(plate))
+        return fail("Confira a placa.", { plate: "Use a placa com 7 letras e números, como ABC1D23 ou ABC-1234." });
+      const values = { name: a.name, details: details.value, alert: a.alert, plate };
+      const plateTaken = (e: { code?: string; message?: string } | null) =>
+        e?.code === "23505" && /plate/.test(e.message ?? "")
+          ? fail("Esta placa já está cadastrada.", {
+              plate: "Já existe um veículo com esta placa. Procure pela placa.",
+            })
+          : dbFail(e);
       if (a.id) {
         const { data, error } = await sb
           .from("client_items")
@@ -183,7 +194,7 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
           .eq("id", a.id)
           .eq("company_id", companyId)
           .select("id");
-        if (error) return dbFail(error);
+        if (error) return plateTaken(error);
         if (!data?.length) return fail("Cadastro não encontrado ou sem permissão para editar.");
         await log(`Dados de ${a.name} (${kind.noun[0]}) atualizados`, "cliente", a.clientId);
         return { ok: true, message: `${a.name} atualizado.`, id: a.id };
@@ -193,9 +204,27 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
         .insert({ ...values, kind: a.kind, client_id: a.clientId, company_id: companyId, created_by: userId })
         .select("id")
         .single();
-      if (error) return dbFail(error);
+      if (error) return plateTaken(error);
       await log(`${a.name} (${kind.noun[0]}) cadastrado`, "cliente", a.clientId);
       return { ok: true, message: `${a.name} cadastrado.`, id: data.id };
+    }
+
+    case "vehicle.transfer":
+    case "workOrder.open":
+    case "workOrder.save":
+    case "workOrder.diagnosis":
+    case "workOrder.addItem":
+    case "workOrder.removeItem":
+    case "workOrder.discount":
+    case "workOrder.send":
+    case "workOrder.approve":
+    case "workOrder.move":
+    case "workOrder.deliver":
+    case "workOrder.cancel":
+    case "workOrder.addPhoto": {
+      const flags = await companyFlags();
+      if (!flags || !moduleEnabled(flags, "ordem_servico")) return fail(MODULE_OFF);
+      return executeWorkOrder(ctx, a, dbFail);
     }
 
     case "item.setActive": {

@@ -7,6 +7,7 @@ import { Modal } from "@/components/ui/overlay";
 import { useToast } from "@/components/ui/toast";
 import { WorkHoursEditor } from "@/features/services/work-hours-editor";
 import { workHoursError } from "@/lib/domain/hours";
+import { moduleAvailable } from "@/lib/domain/segments";
 import type { WorkHours } from "@/lib/domain/types";
 import { same } from "@/lib/utils/equality";
 import { useAction, useBackend } from "@/state/backend-context";
@@ -20,6 +21,7 @@ export function ResourceDialog({
   userId,
 }: DialogProps & { resourceId?: string; userId?: string }) {
   const { data } = useBackend();
+  const agendaOn = moduleAvailable(data.company, "agenda");
   const toast = useToast();
   const t = useTerms();
   const { exec, pending, error, fieldErrors, clearField } = useAction();
@@ -107,8 +109,12 @@ export function ResourceDialog({
           autoComplete="off"
           data-autofocus
         />
-        <WorkHoursEditor value={f.workHours} onChange={(workHours) => setF((x) => ({ ...x, workHours }))} />
-        {hoursError && <InlineAlert>{hoursError}</InlineAlert>}
+        {agendaOn && (
+          <>
+            <WorkHoursEditor value={f.workHours} onChange={(workHours) => setF((x) => ({ ...x, workHours }))} />
+            {hoursError && <InlineAlert>{hoursError}</InlineAlert>}
+          </>
+        )}
         {existing && (
           <label className="flex min-h-11 items-center gap-2">
             <input

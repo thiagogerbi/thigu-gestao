@@ -1,5 +1,5 @@
 import { brParts } from "@/lib/domain/hours";
-import type { Appointment, CommissionRule, ISODate, Package } from "@/lib/domain/types";
+import type { Appointment, CommissionRule, ISODate, Package, WorkOrder, WorkOrderItem } from "@/lib/domain/types";
 
 /**
  * Comissões. Igual a _commission_of e close_commissions no banco (20261114000014_commissions.sql):
@@ -43,7 +43,15 @@ export function monthOf(iso: string): ISODate {
 }
 
 export interface CommissionLine {
-  appointment: Appointment;
+  key: string;
+  /** Quando aconteceu: o atendimento ou a entrega da OS. */
+  at: string;
+  serviceId: string | null;
+  /** Atendimento da agenda (ou null, quando é mão de obra de uma OS). */
+  appointment: Appointment | null;
+  /** Mão de obra de uma OS entregue (oficina). */
+  workOrder: WorkOrder | null;
+  item: WorkOrderItem | null;
   baseCents: number;
   amountCents: number;
 }
@@ -62,18 +70,47 @@ export function commissionSummary(p: {
   appointments: readonly Appointment[];
   packages: readonly Package[];
   rules: readonly CommissionRule[];
+  /** Oficina: mão de obra aprovada das OS entregues no mês (igual a close_commissions no banco). */
+  workOrders?: readonly WorkOrder[];
+  workOrderItems?: readonly WorkOrderItem[];
 }): CommissionSummary {
-  const lines = p.appointments
+  const fromAppointments: CommissionLine[] = p.appointments
     .filter((a) => a.resourceId === p.resourceId && a.status === "compareceu" && monthOf(a.startsAt) === p.month)
-    .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
     .map((a) => {
       const base = commissionBase(a, p.packages);
       return {
+        key: a.id,
+        at: a.startsAt,
+        serviceId: a.serviceId,
         appointment: a,
+        workOrder: null,
+        item: null,
         baseCents: base,
         amountCents: commissionOf(ruleFor(p.rules, p.resourceId, a.serviceId), base),
       };
     });
+  const delivered = (p.workOrders ?? []).filter(
+    (w) =>
+      w.resourceId === p.resourceId && w.stage === "entregue" && w.deliveredAt && monthOf(w.deliveredAt) === p.month,
+  );
+  const fromWorkOrders: CommissionLine[] = delivered.flatMap((w) =>
+    (p.workOrderItems ?? [])
+      .filter((i) => i.workOrderId === w.id && i.kind === "servico" && i.status === "aprovado")
+      .map((i) => {
+        const base = i.quantity * i.unitCents;
+        return {
+          key: i.id,
+          at: w.deliveredAt!,
+          serviceId: i.serviceId,
+          appointment: null,
+          workOrder: w,
+          item: i,
+          baseCents: base,
+          amountCents: commissionOf(ruleFor(p.rules, p.resourceId, i.serviceId), base),
+        };
+      }),
+  );
+  const lines = [...fromAppointments, ...fromWorkOrders].sort((a, b) => a.at.localeCompare(b.at));
   return {
     resourceId: p.resourceId,
     month: p.month,

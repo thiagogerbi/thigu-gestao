@@ -201,6 +201,11 @@ export const IconGroup = ({ className }: P) =>
     </>,
     className,
   );
+export const IconWrench = ({ className }: P) =>
+  base(
+    <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3.5 17.5a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.5-.5-.5-2.5z" />,
+    className,
+  );
 export const IconSpinner = ({ className = "h-4 w-4" }: P) => (
   <svg viewBox="0 0 24 24" className={`${className} animate-spin`} aria-hidden="true" focusable="false">
     <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity=".25" strokeWidth="3" fill="none" />

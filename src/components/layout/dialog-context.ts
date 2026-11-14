@@ -16,6 +16,13 @@ export type DialogSpec =
   | { kind: "commissionRule"; ruleId?: string; resourceId?: string }
   | { kind: "classGroup"; classId?: string }
   | { kind: "enroll"; classId: string }
+  | { kind: "workOrderNew"; clientId?: string; itemId?: string }
+  | { kind: "workOrderEdit"; workOrderId: string }
+  | { kind: "woItem"; workOrderId: string; itemKind?: "peca" | "servico" }
+  | { kind: "woApprove"; workOrderId: string }
+  | { kind: "woDeliver"; workOrderId: string }
+  | { kind: "woCancel"; workOrderId: string }
+  | { kind: "vehicleTransfer"; itemId: string }
   | { kind: "package"; clientId?: string }
   | { kind: "subscription"; clientId?: string; subscriptionId?: string }
   | { kind: "service"; serviceId?: string }
