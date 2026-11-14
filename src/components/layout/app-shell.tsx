@@ -3,12 +3,12 @@
 import { CompanyMark } from "@/components/brand/company-mark";
 import { DialogHost } from "@/components/layout/dialog-host";
 import { Button } from "@/components/ui/button";
-import { IconBuilding, IconCheck, IconColumns, IconHome, IconUsers, IconWallet } from "@/components/ui/icons";
+import { IconBuilding, IconCheck, IconColumns, IconHome, IconUndo, IconUsers, IconWallet } from "@/components/ui/icons";
 import { Modal } from "@/components/ui/overlay";
 import { cx } from "@/components/ui/styles";
 import { ToastProvider } from "@/components/ui/toast";
 import { ClientDrawer } from "@/features/clients/client-drawer";
-import { PreviewTour } from "@/features/tour/preview-tour";
+import { PreviewTour, type TourMode } from "@/features/tour/preview-tour";
 import { brandCss } from "@/lib/domain/branding";
 import { can, usesCrm } from "@/lib/domain/permissions";
 import { ROLE_LABEL, type Role } from "@/lib/domain/types";
@@ -52,25 +52,23 @@ function CompanySwitcher({ dark, hideSingle }: { dark?: boolean; hideSingle?: bo
   if (companies.length <= 1) {
     if (hideSingle) return null;
     return (
-      <p className={cx("truncate text-sm font-semibold", dark ? "text-white" : "text-ink")}>{data.company.name}</p>
+      <p className={cx("truncate font-display text-base font-bold", dark ? "text-white" : "text-ink")}>
+        {data.company.name}
+      </p>
     );
   }
   return (
     <label className="block">
-      <span
-        className={cx(
-          "mb-1 block text-xs font-semibold uppercase tracking-wide",
-          dark ? "text-white/75" : "text-muted",
-        )}
-      >
-        Minha empresa
-      </span>
+      {/* no celular o nome da empresa já é o título da barra; o rótulo fica só para leitores de tela */}
+      <span className={cx("mb-1 block text-sm font-semibold", dark ? "text-white/75" : "sr-only")}>Minha empresa</span>
       <select
         value={data.company.id}
         onChange={(e) => switchCompany(e.target.value)}
         className={cx(
-          "min-h-10 w-full rounded-lg border px-2 text-sm font-semibold",
-          dark ? "border-navy-600 bg-navy-700 text-white" : "border-line bg-white text-ink",
+          "w-full rounded-lg border font-semibold",
+          dark
+            ? "min-h-10 border-navy-600 bg-navy-700 px-2 text-sm text-white"
+            : "min-h-11 truncate border-transparent bg-transparent px-1 font-display font-bold text-ink hover:bg-canvas",
         )}
         aria-label="Trocar de empresa"
       >
@@ -146,7 +144,7 @@ function Sidebar() {
 function MobileTop() {
   const { basePath, data } = useBackend();
   return (
-    <div className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-line bg-white px-4 py-2 lg:hidden print:hidden">
+    <div className="sticky top-0 z-30 flex h-14 items-center justify-between gap-2 border-b border-line bg-white/90 pl-4 pr-2 backdrop-blur-md lg:hidden print:hidden">
       <Link href={basePath} className="shrink-0 rounded-lg" aria-label={`${data.company.name} — Visão geral`}>
         <CompanyMark name={data.company.name} logoDataUrl={data.company.logoDataUrl} variant="compacto" />
       </Link>
@@ -171,7 +169,7 @@ function MobileNav() {
   return (
     <nav
       aria-label="Menu principal"
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white pb-[env(safe-area-inset-bottom)] lg:hidden print:hidden"
+      className="fixed inset-x-0 bottom-0 z-30 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-bar backdrop-blur-md lg:hidden print:hidden"
     >
       <ul className="grid" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
         {items.map((it) => {
@@ -182,12 +180,20 @@ function MobileNav() {
                 href={it.href}
                 aria-current={active ? "page" : undefined}
                 className={cx(
-                  "flex min-h-16 flex-col items-center justify-center gap-0.5 px-1 text-xs font-medium",
-                  active ? "text-primary" : "text-muted",
+                  "flex min-h-16 flex-col items-center justify-center gap-0.5 px-0.5 text-[11px] leading-4",
+                  active ? "font-semibold text-primary-700" : "font-medium text-muted",
                 )}
               >
-                <it.icon className="h-6 w-6" />
-                <span className="truncate">{it.label}</span>
+                {/* a "pílula" atrás do ícone mostra onde a pessoa está sem depender só da cor do texto */}
+                <span
+                  className={cx(
+                    "flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-150",
+                    active && "bg-primary-50",
+                  )}
+                >
+                  <it.icon className="h-[22px] w-[22px]" />
+                </span>
+                <span className="max-w-full truncate">{it.label}</span>
               </Link>
             </li>
           );
@@ -208,7 +214,8 @@ const PERSONA_HINT: Record<Role, string> = {
 function PreviewBanner() {
   const { preview, me } = useBackend();
   const [confirming, setConfirming] = useState(false);
-  const [tourOpen, setTourOpen] = useState(true);
+  // "auto": aberto em telas grandes e fechado no celular, para não cobrir a tela logo de início
+  const [tour, setTour] = useState<TourMode>("auto");
   if (!preview) return null;
   return (
     <div
@@ -217,34 +224,51 @@ function PreviewBanner() {
       aria-label="Aviso da prévia"
     >
       <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-2">
-        <p className="flex-1 basis-72">
+        <p className="flex-1 basis-full md:basis-72">
           <strong>Isto é uma demonstração com dados de exemplo.</strong> Pode clicar à vontade: nada é salvo nem
           enviado.
         </p>
-        <label className="flex flex-wrap items-center gap-2">
-          <span className="font-semibold">Experimente como:</span>
-          <select
-            value={me.userId}
-            onChange={(e) => preview.setPersona(e.target.value)}
-            className="min-h-10 max-w-full rounded-lg border border-[#e4c487] bg-white px-2 text-ink"
+        {/* no celular, quem experimenta e os dois botões cabem numa linha só */}
+        <div className="flex w-full items-center gap-2 md:w-auto">
+          <label className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="sr-only shrink-0 font-semibold md:not-sr-only">Experimente como:</span>
+            <select
+              value={me.userId}
+              onChange={(e) => preview.setPersona(e.target.value)}
+              aria-label="Experimente como"
+              className="min-h-11 w-full min-w-0 truncate rounded-lg border border-[#e4c487] bg-white px-2 font-medium text-ink md:min-h-10 md:w-auto md:font-normal"
+            >
+              {preview.personas.map((p) => (
+                <option key={p.userId} value={p.userId}>
+                  {p.name} — {p.roles.map((r) => PERSONA_HINT[r]).join(", ")}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button
+            size="sm"
+            className="shrink-0"
+            onClick={() => setTour("open")}
+            aria-expanded={tour === "open" || tour === "auto"}
+            aria-label="Guia passo a passo"
           >
-            {preview.personas.map((p) => (
-              <option key={p.userId} value={p.userId}>
-                {p.name} — {p.roles.map((r) => PERSONA_HINT[r]).join(", ")}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={() => setTourOpen(true)} aria-expanded={tourOpen}>
-            Guia passo a passo
+            <span className="md:hidden">Guia</span>
+            <span className="hidden md:inline">Guia passo a passo</span>
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => setConfirming(true)}>
-            Recomeçar exemplo
+          <Button
+            size="sm"
+            variant="secondary"
+            className="shrink-0 max-md:w-11 max-md:px-0"
+            onClick={() => setConfirming(true)}
+            aria-label="Recomeçar exemplo"
+            title="Recomeçar exemplo"
+          >
+            <IconUndo className="h-5 w-5 md:hidden" />
+            <span className="hidden md:inline">Recomeçar exemplo</span>
           </Button>
         </div>
       </div>
-      <PreviewTour open={tourOpen} onClose={() => setTourOpen(false)} />
+      <PreviewTour mode={tour} onMode={setTour} />
       <Modal
         open={confirming}
         onClose={() => setConfirming(false)}

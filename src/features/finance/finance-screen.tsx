@@ -6,7 +6,7 @@ import { Badge, Card, EmptyState, PageHeader } from "@/components/ui/card";
 import { TextField } from "@/components/ui/fields";
 import { IconMoneyIn, IconMoneyOut, IconPlus, IconSearch } from "@/components/ui/icons";
 import { KpiCard } from "@/components/ui/kpi-card";
-import { cx } from "@/components/ui/styles";
+import { cx, keepInView } from "@/components/ui/styles";
 import { AccountCard } from "@/features/finance/account-card";
 import { addDays, formatDateBR, formatShortDateBR } from "@/lib/domain/dates";
 import { formatBRL } from "@/lib/domain/money";
@@ -95,13 +95,14 @@ export function FinanceScreen() {
       <div
         role="tablist"
         aria-label="Seções do financeiro"
-        className="mb-5 flex gap-1 overflow-x-auto rounded-xl border border-line bg-white p-1"
+        className="no-scrollbar mb-5 flex gap-1 overflow-x-auto rounded-xl border border-line bg-white p-1"
       >
         {tabs.map((t) => (
           <button
             key={t.id}
             role="tab"
             aria-selected={tab === t.id}
+            ref={tab === t.id ? keepInView : undefined}
             onClick={() => nav.setQuery({ aba: t.id, filtro: null })}
             className={cx(
               "min-h-11 shrink-0 rounded-lg px-4 text-base font-semibold",
@@ -260,15 +261,16 @@ function AccountsTab({
   return (
     <>
       <div className="mb-3 grid gap-3 md:grid-cols-[1fr_280px]">
-        <div role="group" aria-label="Filtrar por situação" className="flex flex-wrap gap-1.5">
+        <div role="group" aria-label="Filtrar por situação" className="chip-row min-w-0">
           {FILTERS.map((f) => (
             <button
               key={f.id}
               type="button"
               aria-pressed={filter === f.id}
+              ref={filter === f.id ? keepInView : undefined}
               onClick={() => nav.setQuery({ filtro: f.id === "abertas" ? null : f.id })}
               className={cx(
-                "min-h-10 rounded-full border px-3 text-sm font-semibold",
+                "min-h-11 rounded-full border px-3.5 text-sm font-semibold sm:min-h-10 sm:px-3",
                 filter === f.id
                   ? "border-primary bg-primary text-white"
                   : "border-line bg-white text-ink hover:bg-canvas",

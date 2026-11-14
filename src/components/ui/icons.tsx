@@ -70,6 +70,7 @@ export const IconSearch = ({ className }: P) =>
     className,
   );
 export const IconArrowRight = ({ className }: P) => base(<path d="M5 12h14M13 6l6 6-6 6" />, className);
+export const IconChevronRight = ({ className }: P) => base(<path d="M9 6l6 6-6 6" />, className);
 export const IconArrowLeft = ({ className }: P) => base(<path d="M19 12H5M11 6l-6 6 6 6" />, className);
 export const IconAlert = ({ className }: P) =>
   base(

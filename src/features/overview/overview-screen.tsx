@@ -265,7 +265,7 @@ export function OverviewScreen() {
                   <Link
                     href={p.href}
                     className={cx(
-                      "flex items-center gap-3 rounded-xl border bg-white p-4 hover:shadow-md",
+                      "flex items-center gap-3 rounded-2xl border bg-white p-4 shadow-card transition-shadow hover:shadow-raised",
                       TONE_BORDER[p.tone],
                     )}
                   >
@@ -348,20 +348,23 @@ function MoneyFigure({
   const color = tone === "money" ? "text-money-700" : tone === "primary" ? "text-primary-700" : "text-ink";
   const body = (
     <>
-      <span className="font-display text-3xl font-extrabold tabular">{formatBRL(value)}</span>
+      <span className="whitespace-nowrap font-display text-2xl font-extrabold tabular sm:text-3xl">
+        {formatBRL(value)}
+      </span>
     </>
   );
   return (
-    <div className="rounded-xl border border-line bg-white p-4">
+    // no celular: nome à esquerda e valor à direita, numa linha só
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-white p-4 shadow-card sm:block">
       <p className="flex items-center gap-2 font-semibold">
         {label} <HelpTip term={label}>{help}</HelpTip>
       </p>
       {href ? (
-        <Link href={href} className={cx("mt-1 block hover:underline", color)}>
+        <Link href={href} className={cx("block hover:underline sm:mt-1", color)}>
           {body}
         </Link>
       ) : (
-        <p className={cx("mt-1", color)}>{body}</p>
+        <p className={cx("sm:mt-1", color)}>{body}</p>
       )}
     </div>
   );
