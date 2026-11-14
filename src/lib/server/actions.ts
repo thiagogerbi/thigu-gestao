@@ -82,19 +82,50 @@ export async function createCompany(name: string): Promise<ActionResult> {
 
 const roleList = z.array(z.enum(["admin", "gestor", "vendedor", "financeiro"])).min(1, "Escolha pelo menos um papel.");
 
-export async function addMember(companyId: string, email: string, roles: string[]): Promise<ActionResult> {
+/** Mensagens que as funções do banco escrevem para a pessoa ler (as demais viram um texto genérico). */
+const DB_MESSAGE_CODES = new Set(["P0001", "P0002", "22023", "42501"]);
+function dbMessage(error: { message?: string; code?: string }, fallback: string) {
+  return error.code && DB_MESSAGE_CODES.has(error.code) && error.message ? error.message : fallback;
+}
+
+/** Cria (ou atualiza) o convite para um e-mail. O vínculo só existe quando a pessoa aceitar. */
+export async function inviteMember(companyId: string, email: string, roles: string[]): Promise<ActionResult> {
   const s = await session();
   if (!s) return { ok: false, message: "Sua sessão terminou. Entre novamente." };
   const r = roleList.safeParse(roles);
   const e = z.string().trim().email("E-mail inválido.").safeParse(email);
+  if (!uuid.safeParse(companyId).success) return { ok: false, message: "Empresa inválida." };
   if (!r.success) return { ok: false, message: r.error.issues[0].message };
   if (!e.success)
     return { ok: false, message: e.error.issues[0].message, fieldErrors: { email: e.error.issues[0].message } };
   const mine = await rolesIn(s.sb, companyId, s.user.id);
   if (!mine?.includes("admin")) return { ok: false, message: "Somente o administrador gerencia membros." };
-  const { error } = await s.sb.rpc("add_member_by_email", { p_company: companyId, p_email: e.data, p_roles: r.data });
-  if (error) return { ok: false, message: error.message };
-  return { ok: true, message: `${e.data} agora faz parte da empresa.` };
+  const { error } = await s.sb.rpc("invite_member", { p_company: companyId, p_email: e.data, p_roles: r.data });
+  if (error) return { ok: false, message: dbMessage(error, "Não foi possível criar o convite agora.") };
+  return {
+    ok: true,
+    message: `Convite criado para ${e.data.toLowerCase()}. Avise a pessoa: ele aparece quando ela entrar no Thigu com este e-mail.`,
+  };
+}
+
+export async function cancelInvite(inviteId: string): Promise<ActionResult> {
+  const s = await session();
+  if (!s) return { ok: false, message: "Sua sessão terminou. Entre novamente." };
+  if (!uuid.safeParse(inviteId).success) return { ok: false, message: "Convite inválido." };
+  const { error } = await s.sb.rpc("cancel_invite", { p_invite: inviteId });
+  if (error) return { ok: false, message: dbMessage(error, "Não foi possível cancelar o convite agora.") };
+  return { ok: true, message: "Convite cancelado." };
+}
+
+/** Resposta de quem foi convidado. Ao aceitar, a empresa passa a ser a empresa aberta. */
+export async function respondInvite(inviteId: string, accept: boolean): Promise<ActionResult> {
+  const s = await session();
+  if (!s) return { ok: false, message: "Sua sessão terminou. Entre novamente." };
+  if (!uuid.safeParse(inviteId).success) return { ok: false, message: "Convite inválido." };
+  const { data, error } = await s.sb.rpc("respond_invite", { p_invite: inviteId, p_accept: accept });
+  if (error) return { ok: false, message: dbMessage(error, "Não foi possível responder ao convite agora.") };
+  if (accept) await switchCompany(data as string);
+  return { ok: true, message: accept ? "Convite aceito." : "Convite recusado.", id: data as string };
 }
 
 export async function setMemberRoles(

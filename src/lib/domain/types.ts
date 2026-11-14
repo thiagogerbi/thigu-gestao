@@ -53,6 +53,23 @@ export interface Member {
   roles: Role[];
 }
 
+/** Convite aguardando resposta, como o administrador da empresa vê. */
+export interface CompanyInvite {
+  id: string;
+  email: string;
+  roles: Role[];
+  createdAt: ISODateTime;
+}
+
+/** Convite que a pessoa logada recebeu e ainda não respondeu. */
+export interface MyInvite {
+  id: string;
+  companyId: string;
+  companyName: string;
+  roles: Role[];
+  invitedByName: string;
+}
+
 export interface Client {
   id: string;
   name: string;

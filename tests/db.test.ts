@@ -1,6 +1,8 @@
 /**
  * Testa as migrações SQL num Postgres real (PGlite = Postgres compilado para WebAssembly).
  * O esquema "auth" do Supabase é simulado aqui com o mínimo necessário (auth.users e auth.uid()).
+ * No Supabase, email_confirmed_at só é preenchido quando o e-mail é confirmado; aqui o padrão é "confirmado"
+ * para os usuários de teste, e os testes de convite criam um usuário sem confirmação de propósito.
  * Limitação: PGlite tem uma única conexão, então concorrência real (duas sessões ao mesmo tempo)
  * NÃO é exercitada; testamos reenvio/idempotência e as travas FOR UPDATE ficam documentadas.
  */
@@ -29,6 +31,27 @@ const one = async <T = Record<string, unknown>>(sql: string, params: unknown[] =
   (await db.query<T>(sql, params)).rows[0];
 const rows = async <T = Record<string, unknown>>(sql: string, params: unknown[] = []) =>
   (await db.query<T>(sql, params)).rows;
+/** O administrador convida e a pessoa aceita: o vínculo com a empresa só existe depois do aceite. */
+async function invite(company: string, admin: string, email: string, roles: string) {
+  return (
+    await as(admin, () =>
+      one<{ id: string }>("select public.invite_member($1, $2, $3::app_role[]) as id", [company, email, roles]),
+    )
+  ).id;
+}
+async function inviteAndAccept(company: string, admin: string, email: string, roles: string, user: string) {
+  const id = await invite(company, admin, email, roles);
+  await as(user, () => db.query("select public.respond_invite($1, true)", [id]));
+  return id;
+}
+async function newUser(email: string, confirmed = true) {
+  const id = randomUUID();
+  await db.query(
+    "insert into auth.users (id, email, raw_user_meta_data, email_confirmed_at) values ($1, $2, '{}', case when $3 then now() end)",
+    [id, email, confirmed],
+  );
+  return id;
+}
 const plan3 = JSON.stringify([
   { number: 1, amount_cents: 50000, due_date: "2026-11-20" },
   { number: 2, amount_cents: 50000, due_date: "2026-12-20" },
@@ -39,7 +62,7 @@ beforeAll(async () => {
   await db.exec(`
     create role anon nologin; create role authenticated nologin;
     create schema auth;
-    create table auth.users (id uuid primary key, email text, raw_user_meta_data jsonb default '{}');
+    create table auth.users (id uuid primary key, email text, raw_user_meta_data jsonb default '{}', email_confirmed_at timestamptz default now());
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     grant usage on schema auth to authenticated;
   `);
@@ -58,10 +81,8 @@ beforeAll(async () => {
   }
   A = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Aurora Estúdio') as id"))).id;
   B = (await as(U.outro, () => one<{ id: string }>("select public.create_company('Horizonte Serviços') as id"))).id;
-  await as(U.ana, async () => {
-    await db.query("select public.add_member_by_email($1, 'vend@exemplo.test', array['vendedor']::app_role[])", [A]);
-    await db.query("select public.add_member_by_email($1, 'fin@exemplo.test', array['financeiro']::app_role[])", [A]);
-  });
+  await inviteAndAccept(A, U.ana, "vend@exemplo.test", "{vendedor}", U.vend);
+  await inviteAndAccept(A, U.ana, "fin@exemplo.test", "{financeiro}", U.fin);
 }, 120_000);
 
 describe("caso de aceitação no banco", () => {
@@ -419,34 +440,27 @@ describe("correções de permissão", () => {
     });
 
   it("ninguém recebe o convite de outra pessoa trocando o e-mail do próprio perfil", async () => {
-    const intruso = randomUUID();
-    await db.query("insert into auth.users (id, email, raw_user_meta_data) values ($1, 'intruso@exemplo.test', '{}')", [
-      intruso,
-    ]);
+    const intruso = await newUser("intruso@exemplo.test");
     await as(intruso, async () => {
       await expect(
-        db.query("update profiles set email = 'carla@aurora.test' where user_id = $1", [intruso]),
+        db.query("update profiles set email = 'paula@aurora.test' where user_id = $1", [intruso]),
       ).rejects.toThrow(/permission denied/i);
       // o próprio nome continua editável
       await db.query("update profiles set full_name = 'Intruso' where user_id = $1", [intruso]);
     });
-    await as(U.ana, async () => {
-      await expect(
-        db.query("select public.add_member_by_email($1, 'carla@aurora.test', array['financeiro']::app_role[])", [A]),
-      ).rejects.toThrow(/Não encontramos uma conta/);
+    const paulaInvite = await invite(A, U.ana, "paula@aurora.test", "{financeiro}");
+    await as(intruso, async () => {
+      expect(await rows("select * from public.my_invites()")).toHaveLength(0);
+      await expect(db.query("select public.respond_invite($1, true)", [paulaInvite])).rejects.toThrow(
+        /Convite não encontrado/,
+      );
     });
     expect(await rows("select 1 from memberships where user_id = $1", [intruso])).toHaveLength(0);
 
-    // troca de e-mail feita pelo Auth chega ao perfil, e o convite passa a valer para o novo e-mail
+    // troca de e-mail feita pelo Auth chega ao perfil
     await db.query("update auth.users set email = 'novo@exemplo.test' where id = $1", [intruso]);
     expect((await one<{ email: string }>("select email from profiles where user_id = $1", [intruso])).email).toBe(
       "novo@exemplo.test",
-    );
-    await as(U.ana, () =>
-      db.query("select public.add_member_by_email($1, 'NOVO@exemplo.test', array['vendedor']::app_role[])", [A]),
-    );
-    expect(await rows("select 1 from memberships where company_id = $1 and user_id = $2", [A, intruso])).toHaveLength(
-      1,
     );
   });
 
@@ -536,6 +550,143 @@ describe("correções de permissão", () => {
       expect((await one<{ v: number }>("select discount_cents::int v from proposals where id = $1", [pid])).v).toBe(
         2000,
       );
+    });
+  });
+});
+
+// 20261114000004_invites.sql: ninguém entra numa empresa sem aceitar o convite.
+describe("convites", () => {
+  let carla = "";
+  const member = (user: string) =>
+    one<{ roles: string; active: boolean }>(
+      "select roles::text, active from memberships where company_id = $1 and user_id = $2",
+      [A, user],
+    );
+
+  beforeAll(async () => {
+    carla = await newUser("carla@aurora.test");
+  });
+
+  it("o vínculo só existe depois que a pessoa aceita", async () => {
+    // maiúsculas e espaços no e-mail digitado não atrapalham
+    const id = await invite(A, U.ana, "  Carla@Aurora.test ", "{financeiro}");
+    expect(await member(carla)).toBeUndefined();
+
+    // o administrador vê o convite em aberto; quem não é administrador não lê a tabela
+    expect(await as(U.ana, () => rows("select 1 from invites where id = $1", [id]))).toHaveLength(1);
+    expect(await as(U.vend, () => rows("select 1 from invites where id = $1", [id]))).toHaveLength(0);
+    expect(await as(carla, () => rows("select 1 from invites where id = $1", [id]))).toHaveLength(0);
+
+    await as(carla, async () => {
+      const mine = await rows<{ id: string; company_name: string; roles: string; invited_by_name: string }>(
+        "select id, company_name, roles::text, invited_by_name from public.my_invites()",
+      );
+      expect(mine).toEqual([{ id, company_name: "Aurora Estúdio", roles: "{financeiro}", invited_by_name: "ana" }]);
+      // antes de aceitar, a empresa não aparece para ela
+      expect(await rows("select 1 from companies where id = $1", [A])).toHaveLength(0);
+      await db.query("select public.respond_invite($1, true)", [id]);
+      expect(await rows("select 1 from companies where id = $1", [A])).toHaveLength(1);
+      expect(await rows("select * from public.my_invites()")).toHaveLength(0);
+      await expect(db.query("select public.respond_invite($1, true)", [id])).rejects.toThrow(/já foi respondido/);
+    });
+    expect(await member(carla)).toEqual({ roles: "{financeiro}", active: true });
+  });
+
+  it("convidar de novo só atualiza os papéis do convite em aberto", async () => {
+    const first = await invite(A, U.ana, "duda@exemplo.test", "{vendedor}");
+    const second = await invite(A, U.ana, "duda@exemplo.test", "{vendedor,gestor}");
+    expect(second).toBe(first);
+    const pending = await rows<{ roles: string }>(
+      "select roles::text from invites where company_id = $1 and email = 'duda@exemplo.test' and status = 'pendente'",
+      [A],
+    );
+    expect(pending).toEqual([{ roles: "{vendedor,gestor}" }]);
+  });
+
+  it("o convite espera quem ainda não tem conta", async () => {
+    const id = await invite(A, U.ana, "novato@exemplo.test", "{vendedor}");
+    const novato = await newUser("novato@exemplo.test");
+    await as(novato, async () => {
+      expect(await rows("select * from public.my_invites()")).toHaveLength(1);
+      await db.query("select public.respond_invite($1, true)", [id]);
+    });
+    expect(await member(novato)).toEqual({ roles: "{vendedor}", active: true });
+  });
+
+  it("e-mail não confirmado não vê nem aceita convite", async () => {
+    const id = await invite(A, U.ana, "pendente@exemplo.test", "{financeiro}");
+    // alguém cria uma conta com o e-mail convidado, mas não confirma que o e-mail é dele
+    const impostor = await newUser("pendente@exemplo.test", false);
+    await as(impostor, async () => {
+      expect(await rows("select * from public.my_invites()")).toHaveLength(0);
+      await expect(db.query("select public.respond_invite($1, true)", [id])).rejects.toThrow(/Confirme seu e-mail/);
+    });
+    expect(await member(impostor)).toBeUndefined();
+    // depois de confirmar, o convite vale
+    await db.query("update auth.users set email_confirmed_at = now() where id = $1", [impostor]);
+    await as(impostor, () => db.query("select public.respond_invite($1, true)", [id]));
+    expect(await member(impostor)).toEqual({ roles: "{financeiro}", active: true });
+  });
+
+  it("recusar e cancelar não criam vínculo", async () => {
+    const rita = await newUser("rita@exemplo.test");
+    const refused = await invite(A, U.ana, "rita@exemplo.test", "{vendedor}");
+    await as(rita, () => db.query("select public.respond_invite($1, false)", [refused]));
+    expect(await member(rita)).toBeUndefined();
+    expect((await one<{ status: string }>("select status::text from invites where id = $1", [refused])).status).toBe(
+      "recusado",
+    );
+
+    const canceled = await invite(A, U.ana, "rita@exemplo.test", "{vendedor}");
+    expect(canceled).not.toBe(refused);
+    await as(U.ana, () => db.query("select public.cancel_invite($1)", [canceled]));
+    await as(rita, async () => {
+      expect(await rows("select * from public.my_invites()")).toHaveLength(0);
+      await expect(db.query("select public.respond_invite($1, true)", [canceled])).rejects.toThrow(
+        /já foi respondido ou cancelado/,
+      );
+    });
+    expect(await member(rita)).toBeUndefined();
+  });
+
+  it("só o administrador convida e cancela; quem já é membro não recebe convite", async () => {
+    const id = await invite(A, U.ana, "sol@exemplo.test", "{vendedor}");
+    await as(U.vend, async () => {
+      await expect(
+        db.query("select public.invite_member($1, 'amigo@exemplo.test', '{admin}'::app_role[])", [A]),
+      ).rejects.toThrow(/administrador/);
+      await expect(db.query("select public.cancel_invite($1)", [id])).rejects.toThrow(/administrador/);
+    });
+    // administrador de outra empresa não convida para esta nem cancela convites daqui
+    await as(U.outro, async () => {
+      await expect(
+        db.query("select public.invite_member($1, 'amigo@exemplo.test', '{admin}'::app_role[])", [A]),
+      ).rejects.toThrow(/administrador/);
+      await expect(db.query("select public.cancel_invite($1)", [id])).rejects.toThrow(/Convite não encontrado/);
+    });
+    await expect(invite(A, U.ana, "vend@exemplo.test", "{gestor}")).rejects.toThrow(/já faz parte/);
+    await expect(invite(A, U.ana, "sem-arroba", "{gestor}")).rejects.toThrow(/E-mail inválido/);
+  });
+
+  it("quem teve o acesso removido volta só aceitando um novo convite", async () => {
+    await as(U.ana, () =>
+      db.query("select public.set_member_roles($1, $2, '{financeiro}'::app_role[], false)", [A, carla]),
+    );
+    expect(await as(carla, () => rows("select 1 from companies where id = $1", [A]))).toHaveLength(0);
+    const id = await invite(A, U.ana, "carla@aurora.test", "{gestor}");
+    expect((await member(carla))?.active).toBe(false);
+    await as(carla, () => db.query("select public.respond_invite($1, true)", [id]));
+    expect(await member(carla)).toEqual({ roles: "{gestor}", active: true });
+  });
+
+  it("a entrada direta na empresa não existe mais", async () => {
+    await as(U.ana, async () => {
+      await expect(
+        db.query("select public.add_member_by_email($1, 'rita@exemplo.test', '{vendedor}'::app_role[])", [A]),
+      ).rejects.toThrow(/does not exist/);
+      await expect(
+        db.query("insert into memberships (company_id, user_id, roles) values ($1, $2, '{admin}')", [A, U.outro]),
+      ).rejects.toThrow(/permission denied/i);
     });
   });
 });

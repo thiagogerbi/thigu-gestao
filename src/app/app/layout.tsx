@@ -1,8 +1,9 @@
 import { ThiguLogo } from "@/components/brand/thigu-logo";
 import { AppShell } from "@/components/layout/app-shell";
 import { CreateCompanyForm } from "@/features/auth/create-company-form";
+import { PendingInvites } from "@/features/company/pending-invites";
 import { COMPANY_COOKIE } from "@/lib/server/constants";
-import { loadCompanyData, loadMemberships } from "@/lib/server/load";
+import { loadCompanyData, loadMemberships, loadMyInvites } from "@/lib/server/load";
 import { supabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { RealBackend } from "@/state/real-backend";
@@ -48,14 +49,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { data: auth } = await sb.auth.getUser();
   if (!auth.user) redirect("/entrar");
 
-  const memberships = await loadMemberships(sb, auth.user.id);
+  const [memberships, invites] = await Promise.all([loadMemberships(sb, auth.user.id), loadMyInvites(sb)]);
   if (memberships.length === 0) {
     return (
       <Centered>
-        <h1 className="text-xl font-bold">Vamos cadastrar sua empresa</h1>
+        <PendingInvites invites={invites} />
+        <h1 className="text-xl font-bold">
+          {invites.length > 0 ? "Ou cadastre a sua própria empresa" : "Vamos cadastrar sua empresa"}
+        </h1>
         <p className="mb-4 mt-1 text-muted">
-          Você será o administrador e poderá convidar sua equipe depois. Se alguém já convidou você, peça para adicionar
-          o seu e-mail em “Minha empresa”.
+          Você será o administrador e poderá convidar sua equipe depois.
+          {invites.length === 0 &&
+            " Se alguém convidou você, o convite aparece aqui quando você entra com o e-mail convidado (já confirmado)."}
         </p>
         <CreateCompanyForm />
       </Centered>
@@ -77,7 +82,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       me={me}
       companies={memberships.map((m) => ({ id: m.companyId, name: m.companyName }))}
     >
-      <AppShell>{children}</AppShell>
+      <AppShell>
+        <PendingInvites invites={invites} />
+        {children}
+      </AppShell>
     </RealBackend>
   );
 }

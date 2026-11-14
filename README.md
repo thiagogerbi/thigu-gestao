@@ -53,7 +53,7 @@ Abra <http://localhost:3000>:
    - pela **Supabase CLI**: `supabase link` e depois `supabase db push`.
 4. Em _Authentication › Providers_, mantenha **E-mail** ativo. Se a confirmação por e-mail estiver ligada, o usuário confirma pelo link antes de entrar.
 5. Rode `npm run dev`, acesse `/entrar`, crie a conta e cadastre a empresa. Você será o administrador.
-6. Para adicionar pessoas: cada uma cria a própria conta, e o administrador adiciona o e-mail em **Minha empresa**, escolhendo os papéis. Nenhum convite é enviado automaticamente.
+6. Para adicionar pessoas: o administrador convida pelo e-mail em **Minha empresa**, escolhendo os papéis. O convite aparece para a pessoa quando ela entra no Thigu com esse e-mail (pode criar a conta depois), e ela só passa a fazer parte da empresa quando aceita. Nenhum e-mail é enviado automaticamente: avise a pessoa. Mantenha a confirmação de e-mail ligada no Supabase; sem e-mail confirmado ninguém vê nem aceita convites.
 
 ---
 
@@ -87,7 +87,7 @@ src/
     proposals/              proposta (tela/impressão), editor, envio, aceite, recusa
     sales/                  fechar venda, conferir parcelas, editor e etapas
     finance/                a receber, a pagar, caixa, recebimento/pagamento, desfazer, cancelar
-    company/                membros e papéis
+    company/                dados da empresa, membros, papéis e convites
     auth/                   formulários de login e de criação de empresa
   components/
     ui/                     componentes genéricos: botão, campos, cartão, janela/painel, aviso, ícones
@@ -145,13 +145,14 @@ Uma pessoa pode ter vários papéis e participar de várias empresas (seletor "M
 
 ## O que funciona, o que é simulado e o que está pendente
 
-### Testado automaticamente (`npm test` — 46 testes)
+### Testado automaticamente (`npm test` — 56 testes)
 
 - Regras de dinheiro, datas, divisão de parcelas, saldo e situação das contas, totais de proposta e matriz de permissões.
 - **Caso de aceitação completo** no motor da prévia **e no banco** (migrações reais rodando no PGlite):
   venda de R$ 1.500 → 3 × R$ 500 → conferência cria 3 contas vinculadas → R$ 200 na 1ª parcela → parcial com R$ 300 → painel com R$ 1.500 vendidos, R$ 200 recebidos e R$ 1.300 a receber → repetir a confirmação não duplica → **usuário de outra empresa não lê nem altera** → **vendedor não confirma parcelas**.
 - RLS: vendedor não vê contas a pagar nem lança despesas; chave composta impede misturar empresas; histórico não pode ser apagado; o dono faz o fluxo sozinho; numeração e aceite de propostas.
 - Chamadas diretas ao banco (sem passar pela interface): o e-mail do perfil não pode ser trocado para receber o convite de outra pessoa; venda não fecha com parcela sem número, valor ou vencimento; vendedor não aponta a própria negociação para um cliente que não vê; proposta e itens só são gravados pelas funções.
+- Convites: o vínculo só existe depois do aceite; o convite espera quem ainda não tem conta; e-mail não confirmado não vê nem aceita; recusar e cancelar não criam vínculo; só o administrador convida e cancela; quem teve o acesso removido só volta aceitando um novo convite.
 
 ### Verificado manualmente no navegador (prévia, por mim, assistente de IA)
 
@@ -188,7 +189,8 @@ Uma pessoa pode ter vários papéis e participar de várias empresas (seletor "M
 ### Pendente / próximos passos
 
 - Testes de ponta a ponta (Playwright) contra um Supabase local (`supabase start`, que exige Docker).
-- Convite por e-mail (hoje o administrador adiciona quem já tem conta).
+- Enviar o convite por e-mail (hoje o convite existe e exige aceite, mas o administrador avisa a pessoa por conta própria).
+- As telas de convite (lista em **Minha empresa** e aviso para quem foi convidado) só existem na versão real e ainda não foram vistas rodando contra um Supabase.
 - Paginação ao carregar dados (hoje tudo da empresa é carregado de uma vez, o que serve para pequenas empresas).
 - Evoluções previstas: receitas e despesas recorrentes, importação e exportação de planilhas, lembretes simples.
 - **Fora do escopo:** integração bancária, cobrança automática, WhatsApp oficial, emissão fiscal, estoque e ERP.

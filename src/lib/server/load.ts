@@ -3,9 +3,11 @@ import type {
   Activity,
   Client,
   CompanyData,
+  CompanyInvite,
   Deal,
   Member,
   Movement,
+  MyInvite,
   Note,
   Proposal,
   Role,
@@ -35,6 +37,43 @@ export async function loadMemberships(sb: ServerSupabase, userId: string): Promi
     companyId: m.company_id,
     companyName: m.companies?.name ?? "Empresa",
     roles: m.roles as Role[],
+  }));
+}
+
+/** Convites que a pessoa logada recebeu e ainda não respondeu (função my_invites, pelo e-mail confirmado). */
+export async function loadMyInvites(sb: ServerSupabase): Promise<MyInvite[]> {
+  const { data, error } = await sb.rpc("my_invites");
+  if (error) {
+    // o aviso de convite não pode derrubar a tela inteira
+    console.error("[thigu] não foi possível carregar os convites", error);
+    return [];
+  }
+  return ((data ?? []) as Row[]).map((i) => ({
+    id: i.id,
+    companyId: i.company_id,
+    companyName: i.company_name,
+    roles: i.roles as Role[],
+    invitedByName: i.invited_by_name,
+  }));
+}
+
+/** Convites em aberto da empresa. A RLS só devolve linhas para o administrador. */
+export async function loadCompanyInvites(sb: ServerSupabase, companyId: string): Promise<CompanyInvite[]> {
+  const { data, error } = await sb
+    .from("invites")
+    .select("id, email, roles, created_at")
+    .eq("company_id", companyId)
+    .eq("status", "pendente")
+    .order("created_at");
+  if (error) {
+    console.error("[thigu] não foi possível carregar os convites da empresa", error);
+    return [];
+  }
+  return ((data ?? []) as Row[]).map((i) => ({
+    id: i.id,
+    email: i.email,
+    roles: i.roles as Role[],
+    createdAt: i.created_at,
   }));
 }
 
