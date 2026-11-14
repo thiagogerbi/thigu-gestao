@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge, EmptyState, PageHeader } from "@/components/ui/card";
 import { IconClock, IconPlus } from "@/components/ui/icons";
 import { cx, keepInView } from "@/components/ui/styles";
+import { onTabListKeyDown } from "@/components/ui/tabs";
 import { useToast } from "@/components/ui/toast";
 import { StageSelect } from "@/features/deals/stage-select";
 import { addDays, formatShortDateBR, relativeDayLabel, toISODate } from "@/lib/domain/dates";
@@ -190,12 +191,18 @@ export function DealsScreen() {
         </EmptyState>
       ) : (
         <>
-          <div role="tablist" aria-label="Escolha a etapa" className="chip-row mb-3 sm:hidden">
+          <div
+            role="tablist"
+            aria-label="Escolha a etapa"
+            onKeyDown={onTabListKeyDown}
+            className="chip-row mb-3 sm:hidden"
+          >
             {columns.map((c) => (
               <button
                 key={c.id}
                 type="button"
                 role="tab"
+                tabIndex={c.id === activeMobile ? 0 : -1}
                 aria-selected={c.id === activeMobile}
                 ref={c.id === activeMobile ? keepInView : undefined}
                 onClick={() => setMobileStage(c.id)}

@@ -7,6 +7,8 @@ import { TextField } from "@/components/ui/fields";
 import { IconMoneyIn, IconMoneyOut, IconPlus, IconSearch } from "@/components/ui/icons";
 import { KpiCard } from "@/components/ui/kpi-card";
 import { cx, keepInView } from "@/components/ui/styles";
+import { onTabListKeyDown } from "@/components/ui/tabs";
+import { CashForecastChart } from "@/features/finance/cash-forecast-chart";
 import { AccountCard } from "@/features/finance/account-card";
 import { addDays, formatDateBR, formatShortDateBR } from "@/lib/domain/dates";
 import { formatBRL } from "@/lib/domain/money";
@@ -95,12 +97,16 @@ export function FinanceScreen() {
       <div
         role="tablist"
         aria-label="Seções do financeiro"
+        onKeyDown={onTabListKeyDown}
         className="no-scrollbar mb-5 flex gap-1 overflow-x-auto rounded-xl border border-line bg-white p-1"
       >
         {tabs.map((t) => (
           <button
             key={t.id}
             role="tab"
+            id={`aba-financeiro-${t.id}`}
+            aria-controls="painel-financeiro"
+            tabIndex={tab === t.id ? 0 : -1}
             aria-selected={tab === t.id}
             ref={tab === t.id ? keepInView : undefined}
             onClick={() => nav.setQuery({ aba: t.id, filtro: null })}
@@ -123,23 +129,25 @@ export function FinanceScreen() {
           </button>
         ))}
       </div>
-      <p className="-mt-2 mb-5 rounded-lg bg-primary-50 px-3 py-2 text-primary-700" role="note">
-        {TAB_HELP[tab]}
-      </p>
+      <div role="tabpanel" id="painel-financeiro" aria-labelledby={`aba-financeiro-${tab}`}>
+        <p className="-mt-2 mb-5 rounded-lg bg-primary-50 px-3 py-2 text-primary-700" role="note">
+          {TAB_HELP[tab]}
+        </p>
 
-      {tab === "conferir" && <ReviewTab />}
-      {(tab === "receber" || tab === "pagar") && (
-        <AccountsTab
-          kind={tab}
-          filter={filter}
-          q={q}
-          setQ={(v) => {
-            setQ(v);
-            nav.setQuery({ busca: v || null });
-          }}
-        />
-      )}
-      {tab === "caixa" && <CashTab />}
+        {tab === "conferir" && <ReviewTab />}
+        {(tab === "receber" || tab === "pagar") && (
+          <AccountsTab
+            kind={tab}
+            filter={filter}
+            q={q}
+            setQ={(v) => {
+              setQ(v);
+              nav.setQuery({ busca: v || null });
+            }}
+          />
+        )}
+        {tab === "caixa" && <CashTab />}
+      </div>
     </>
   );
 }
@@ -348,6 +356,16 @@ function CashTab() {
           Saldo do caixa + parcelas confirmadas a receber − contas a pagar, por vencimento (inclui o que já está
           atrasado). Negociações em andamento não entram.
         </p>
+        <CashForecastChart
+          points={[
+            { label: "Hoje", sub: formatShortDateBR(today), cents: ov.cashCents },
+            ...ov.forecast.map((f) => ({
+              label: `${f.days} dias`,
+              sub: formatShortDateBR(addDays(today, f.days)),
+              cents: f.netCents,
+            })),
+          ]}
+        />
         <ul className="grid gap-2 sm:grid-cols-3">
           {ov.forecast.map((f) => (
             <li key={f.days} className="rounded-lg bg-canvas p-3 text-sm tabular">

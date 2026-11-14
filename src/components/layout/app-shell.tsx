@@ -15,7 +15,7 @@ import { ROLE_LABEL, type Role } from "@/lib/domain/types";
 import { useBackend } from "@/state/backend-context";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useState, useSyncExternalStore } from "react";
 
 function useNavItems() {
   const { me, basePath } = useBackend();
@@ -211,11 +211,32 @@ const PERSONA_HINT: Record<Role, string> = {
   financeiro: "cuida do dinheiro",
 };
 
+const TOUR_CLOSED_KEY = "thigu:guia-fechado";
+const noSubscription = () => () => {};
+function readTourClosed() {
+  try {
+    return window.sessionStorage.getItem(TOUR_CLOSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 function PreviewBanner() {
   const { preview, me } = useBackend();
   const [confirming, setConfirming] = useState(false);
-  // "auto": aberto em telas grandes e fechado no celular, para não cobrir a tela logo de início
-  const [tour, setTour] = useState<TourMode>("auto");
+  // "auto": aberto em telas grandes e fechado no celular, para não cobrir a tela logo de início.
+  // Se a pessoa fechou o guia, ele não reabre a cada recarregamento da página (vale para a aba do navegador).
+  const closedBefore = useSyncExternalStore(noSubscription, readTourClosed, () => false);
+  const [tourChoice, setTourChoice] = useState<TourMode | null>(null);
+  const tour: TourMode = tourChoice ?? (closedBefore ? "closed" : "auto");
+  const setTour = (mode: TourMode) => {
+    try {
+      window.sessionStorage.setItem(TOUR_CLOSED_KEY, mode === "closed" ? "1" : "0");
+    } catch {
+      // navegação privada pode bloquear o armazenamento; o guia só deixa de lembrar
+    }
+    setTourChoice(mode);
+  };
   if (!preview) return null;
   return (
     <div

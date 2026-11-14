@@ -6,7 +6,7 @@ import { Badge, Card } from "@/components/ui/card";
 import { TextAreaField } from "@/components/ui/fields";
 import { IconDoc, IconEdit, IconMail, IconPhone, IconPlus } from "@/components/ui/icons";
 import { Drawer } from "@/components/ui/overlay";
-import { cx } from "@/components/ui/styles";
+import { buttonClass, cx } from "@/components/ui/styles";
 import { useToast } from "@/components/ui/toast";
 import { StageSelect } from "@/features/deals/stage-select";
 import { AccountCard } from "@/features/finance/account-card";
@@ -15,6 +15,7 @@ import { formatDateBR, formatDateTimeBR, relativeDayLabel } from "@/lib/domain/d
 import { daysInStage, isOpenStage, staleReason } from "@/lib/domain/deals";
 import { formatBRL } from "@/lib/domain/money";
 import { canEditClient, canEditDeal } from "@/lib/domain/permissions";
+import { telUrl, whatsappUrl } from "@/lib/domain/phone";
 import { proposalTotalCents } from "@/lib/domain/proposals";
 import { PROPOSAL_STATUS_LABEL, STAGE_LABEL } from "@/lib/domain/types";
 import { useAction, useBackend, useCan, useMemberName } from "@/state/backend-context";
@@ -106,6 +107,8 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
   const [note, setNote] = useState("");
   const [noteDeal, setNoteDeal] = useState(focusDeal ?? "");
   const client = clientById(data, clientId)!;
+  const phoneHref = telUrl(client.phone);
+  const whatsappHref = whatsappUrl(client.phone);
   const deals = data.deals
     .filter((d) => d.clientId === clientId)
     .sort(
@@ -344,26 +347,42 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
       <Section title="Contato" collapsible defaultOpen>
         <ul className="grid gap-2 text-base">
           <li className="flex items-center gap-2">
-            <IconMail className="h-4 w-4 text-muted" />
+            <IconMail className="h-4 w-4 shrink-0 text-muted" />
             {client.email ? (
-              <a className="text-primary-700 underline-offset-2 hover:underline" href={`mailto:${client.email}`}>
+              <a
+                className="inline-flex min-h-11 items-center break-all text-primary-700 underline-offset-2 hover:underline sm:min-h-0"
+                href={`mailto:${client.email}`}
+              >
                 {client.email}
               </a>
             ) : (
               <span className="text-muted">Sem e-mail</span>
             )}
           </li>
-          <li className="flex items-center gap-2">
-            <IconPhone className="h-4 w-4 text-muted" />
-            {client.phone ? (
+          <li className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <IconPhone className="h-4 w-4 shrink-0 text-muted" />
+            {!client.phone ? (
+              <span className="text-muted">Sem telefone</span>
+            ) : phoneHref ? (
               <a
-                className="text-primary-700 underline-offset-2 hover:underline"
-                href={`tel:${client.phone.replace(/\D/g, "")}`}
+                className="inline-flex min-h-11 items-center text-primary-700 underline-offset-2 hover:underline sm:min-h-0"
+                href={phoneHref}
               >
                 {client.phone}
               </a>
             ) : (
-              <span className="text-muted">Sem telefone</span>
+              <span>{client.phone}</span>
+            )}
+            {/* no celular abre o aplicativo do WhatsApp já na conversa com o cliente */}
+            {whatsappHref && (
+              <a
+                href={whatsappHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buttonClass("secondary", "sm", "ml-auto")}
+              >
+                Chamar no WhatsApp
+              </a>
             )}
           </li>
         </ul>
