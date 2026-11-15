@@ -67,11 +67,11 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
   const sales = allFin || allCrm ? data.sales : data.sales.filter((s) => dealIds.has(s.dealId));
   const saleIds = new Set(sales.map((s) => s.id));
   // recepção e caixa recebem no balcão o que o cliente deve (só nos ramos com caixa)
-  const collects = on("caixa") && (roles.includes("recepcao") || roles.includes("caixa"));
+  const collects = on("caixa") && (roles.includes("recepcao") || roles.includes("caixa") || roles.includes("vendedor"));
   const accounts = data.accounts.filter((a) => {
     if (allFin) return true;
     if (a.kind === "pagar") return false;
-    if (collects && ["atendimento", "pacote", "mensalidade", "caixa"].includes(a.origin)) return true;
+    if (collects && ["atendimento", "pacote", "mensalidade", "caixa", "crediario"].includes(a.origin)) return true;
     return can(roles, "recebiveis.ver_proprios") && a.saleId !== null && saleIds.has(a.saleId);
   });
   const accountIds = new Set(accounts.map((a) => a.id));
@@ -109,6 +109,8 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
     attendance: on("turmas")
       ? data.attendance.filter((a) => clientIds.has(a.clientId) || myClasses.has(a.classId))
       : [],
+    stockMovements: on("estoque") ? data.stockMovements : [],
+    counterSales: can(roles, "caixa.operar") || allFin ? data.counterSales : [],
     workOrders,
     workOrderItems: data.workOrderItems.filter((i) => woIds.has(i.workOrderId)),
     workOrderEvents: data.workOrderEvents.filter((e) => woIds.has(e.workOrderId)),

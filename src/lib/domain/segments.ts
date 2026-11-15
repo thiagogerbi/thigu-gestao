@@ -41,7 +41,7 @@ export const MODULES: Record<ModuleId, ModuleInfo> = {
   turmas: { label: "Turmas e presença", minPlan: "essencial", built: true },
   caixa: { label: "Caixa do dia", minPlan: "essencial", built: true },
   ordem_servico: { label: "Ordem de serviço", minPlan: "essencial", built: true },
-  estoque: { label: "Estoque", minPlan: "essencial", built: false },
+  estoque: { label: "Estoque, balcão e crediário", minPlan: "essencial", built: true },
   pedidos: { label: "Pedidos com prazo", minPlan: "essencial", built: false },
   comissoes: { label: "Comissões", minPlan: "equipe", built: true },
   agendamento_online: { label: "Agendamento online", minPlan: "equipe", built: true },

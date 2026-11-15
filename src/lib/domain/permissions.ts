@@ -37,7 +37,10 @@ export type Capability =
   | "os.ver_todas" // ver todas as ordens de serviço (o mecânico vê as dele)
   | "os.editar" // abrir OS, orçar, enviar, registrar aprovação, mover qualquer etapa, cancelar
   | "os.desconto_livre" // desconto acima de 10% do orçamento
-  | "os.entregar"; // entregar o veículo e gerar a cobrança
+  | "os.entregar" // entregar o veículo e gerar a cobrança
+  | "estoque.movimentar" // dar entrada de mercadoria, ajustar e registrar perdas
+  | "balcao.desconto_livre" // desconto acima de 10% na venda do balcão
+  | "crediario.limite"; // definir o limite de crediário de cada cliente
 
 const ALL_CLIENTS: Capability[] = ["clientes.ver_todos", "clientes.editar_todos", "clientes.editar_proprios"];
 
@@ -68,6 +71,9 @@ const MATRIX: Record<Role, Capability[]> = {
     "os.editar",
     "os.desconto_livre",
     "os.entregar",
+    "estoque.movimentar",
+    "balcao.desconto_livre",
+    "crediario.limite",
   ],
   gestor: [
     ...ALL_CLIENTS,
@@ -87,6 +93,8 @@ const MATRIX: Record<Role, Capability[]> = {
     "os.editar",
     "os.desconto_livre",
     "os.entregar",
+    "estoque.movimentar",
+    "balcao.desconto_livre",
   ],
   vendedor: [
     "clientes.editar_proprios",
@@ -108,6 +116,8 @@ const MATRIX: Record<Role, Capability[]> = {
     "comissoes.fechar",
     "os.ver_todas",
     "os.entregar",
+    "estoque.movimentar",
+    "crediario.limite",
   ],
   // Papéis dos ramos com atendimento. O caixa do dia entra com o próximo módulo.
   recepcao: [

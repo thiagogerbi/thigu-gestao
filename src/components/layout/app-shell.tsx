@@ -7,6 +7,8 @@ import {
   IconBuilding,
   IconCalendar,
   IconCheck,
+  IconBox,
+  IconCard,
   IconColumns,
   IconGroup,
   IconHome,
@@ -77,6 +79,21 @@ function useNavItems() {
       label: "Caixa",
       icon: IconRegister,
       show: moduleAvailable(data.company, "caixa") && can(me.roles, "caixa.operar"),
+    },
+    {
+      href: `${basePath}/estoque`,
+      label: "Estoque",
+      icon: IconBox,
+      show:
+        moduleAvailable(data.company, "estoque") &&
+        (can(me.roles, "produtos.gerenciar") || can(me.roles, "estoque.movimentar") || can(me.roles, "caixa.operar")),
+    },
+    {
+      href: `${basePath}/crediario`,
+      label: "Crediário",
+      icon: IconCard,
+      show:
+        moduleAvailable(data.company, "estoque") && (can(me.roles, "caixa.operar") || can(me.roles, "financeiro.ver")),
     },
     { href: `${basePath}/negociacoes`, label: "Negociações", icon: IconColumns, show: usesCrm(me.roles) },
     { href: `${basePath}/tarefas`, label: "Tarefas", icon: IconCheck, show: true },

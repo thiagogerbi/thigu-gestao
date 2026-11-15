@@ -122,6 +122,8 @@ export interface Client {
   /** Campos próprios do ramo (data de nascimento, convênio…), definidos em segments.ts. */
   extra: Record<string, string>;
   createdAt: ISODateTime;
+  /** Limite do crediário (null ou ausente: o cliente não compra no crediário). */
+  creditLimitCents?: number | null;
 }
 
 /** Pet (e, mais adiante, veículo) ligado a um cliente. Arquivar esconde sem apagar o histórico. */
@@ -168,6 +170,48 @@ export interface Product {
   name: string;
   priceCents: number;
   active: boolean;
+  /** Estoque (Fase 4). Código interno, código de barras, custo e saldo. */
+  sku?: string;
+  barcode?: string | null;
+  costCents?: number;
+  trackStock?: boolean;
+  /** Saldo: soma das movimentações (só o banco altera). */
+  stockQty?: number;
+  minStock?: number;
+  /** Moda: tamanho e cor da peça (cada combinação é um produto). */
+  size?: string;
+  color?: string;
+  /** Autopeças: em quais carros a peça serve. */
+  fits?: string;
+}
+
+export type StockMovementKind = "entrada" | "venda" | "devolucao" | "ajuste" | "perda";
+
+export interface StockMovement {
+  id: string;
+  productId: string;
+  kind: StockMovementKind;
+  /** Positivo entra, negativo sai. */
+  quantity: number;
+  unitCostCents: number | null;
+  saleId: string | null;
+  reason: string;
+  createdBy: string;
+  createdAt: ISODateTime;
+}
+
+/** Venda no balcão: à vista (entra no caixa) ou no crediário (vira parcelas). */
+export interface CounterSale {
+  id: string;
+  sessionId: string;
+  clientId: string | null;
+  subtotalCents: number;
+  discountCents: number;
+  totalCents: number;
+  payment: "avista" | "crediario";
+  method: PaymentMethod | null;
+  createdBy: string;
+  createdAt: ISODateTime;
 }
 
 /** Caixa do dia: abre com o troco, recebe e vende, e fecha comparando o esperado com o contado. */
@@ -191,6 +235,10 @@ export interface CashSaleItem {
   description: string;
   quantity: number;
   unitCents: number;
+  /** Venda do balcão a que o item pertence (vendas antigas do caixa não têm). */
+  saleId?: string | null;
+  /** Quantas unidades já foram devolvidas. */
+  returnedQty?: number;
 }
 
 /** Regra de comissão: porcentagem (centésimos: 4000 = 40%) ou valor fixo, por profissional e/ou serviço. */
@@ -385,7 +433,17 @@ export interface Sale {
 
 export type AccountKind = "receber" | "pagar";
 export type AccountOrigin =
-  "venda" | "despesa" | "avulsa" | "atendimento" | "pacote" | "mensalidade" | "caixa" | "comissao" | "os";
+  | "venda"
+  | "despesa"
+  | "avulsa"
+  | "atendimento"
+  | "pacote"
+  | "mensalidade"
+  | "caixa"
+  | "comissao"
+  | "os"
+  | "crediario"
+  | "devolucao";
 
 export interface Account {
   id: string;
@@ -411,6 +469,8 @@ export interface Account {
   period?: ISODate | null;
   /** Cobrança de uma ordem de serviço entregue. */
   workOrderId?: string | null;
+  /** Venda do balcão (à vista, parcela do crediário ou devolução). */
+  counterSaleId?: string | null;
 }
 
 // ---------------------------------------------------------------- Oficina (ordem de serviço)
@@ -566,6 +626,8 @@ export interface CompanyData {
   workOrderItems: WorkOrderItem[];
   workOrderEvents: WorkOrderEvent[];
   workOrderPhotos: WorkOrderPhoto[];
+  stockMovements: StockMovement[];
+  counterSales: CounterSale[];
   deals: Deal[];
   tasks: Task[];
   notes: Note[];

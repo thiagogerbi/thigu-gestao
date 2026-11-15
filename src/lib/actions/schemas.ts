@@ -197,7 +197,50 @@ export const actionSchema = z.discriminatedUnion("type", [
     name: text(80).min(1, "Digite o nome do produto."),
     priceCents: cents,
     active: z.boolean(),
+    /** Estoque (só com o módulo ligado). Sem estes campos, o que já existe é mantido. */
+    sku: text(40).optional(),
+    barcode: z
+      .string()
+      .trim()
+      .regex(/^[0-9A-Za-z-]{4,40}$/, "Use de 4 a 40 letras e números, sem espaço.")
+      .nullable()
+      .optional(),
+    costCents: cents.optional(),
+    minStock: z.number().int().min(0).max(1_000_000).optional(),
+    size: text(20).optional(),
+    color: text(30).optional(),
+    fits: text(300).optional(),
   }),
+  z.object({
+    type: z.literal("stock.entry"),
+    productId: id,
+    quantity: z.number().int().min(1, "Use pelo menos 1.").max(100_000),
+    unitCostCents: cents.nullable(),
+    reason: text(200),
+  }),
+  z.object({
+    type: z.literal("stock.adjust"),
+    productId: id,
+    delta: z
+      .number()
+      .int()
+      .min(-1_000_000)
+      .max(1_000_000)
+      .refine((n) => n !== 0, "Nada mudou."),
+    kind: z.enum(["ajuste", "perda"]),
+    reason: text(200).min(3, "Escreva o motivo."),
+  }),
+  z.object({
+    type: z.literal("counter.return"),
+    saleId: id,
+    items: z
+      .array(z.object({ itemId: id, quantity: z.number().int().min(1).max(999) }))
+      .min(1, "Escolha o que está sendo devolvido.")
+      .max(30),
+    method: methodSchema,
+    requestId: z.string().uuid(),
+  }),
+  z.object({ type: z.literal("client.setCreditLimit"), clientId: id, limitCents: cents.nullable() }),
   z.object({ type: z.literal("cash.open"), openingCents: z.number().int().min(0).max(1_000_000_00) }),
   z.object({
     type: z.literal("cash.sale"),
@@ -215,8 +258,15 @@ export const actionSchema = z.discriminatedUnion("type", [
       )
       .min(1, "Adicione pelo menos um item.")
       .max(30),
-    method: methodSchema,
+    /** null no crediário (o cliente paga as parcelas depois). */
+    method: methodSchema.nullable(),
     requestId: z.string().uuid(),
+    discountCents: cents.default(0),
+    /** Parcelas do crediário; vazio ou ausente = venda à vista. */
+    plan: z
+      .array(z.object({ number: z.number().int().min(1).max(36), amountCents: positiveCents, dueDate: date }))
+      .max(12)
+      .default([]),
   }),
   z.object({
     type: z.literal("cash.receive"),

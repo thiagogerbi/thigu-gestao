@@ -49,7 +49,7 @@ export function FieldShell({
   );
 }
 
-type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
+type InputProps = React.ComponentProps<"input"> & {
   label: React.ReactNode;
   hint?: React.ReactNode;
   error?: string | null;

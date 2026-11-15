@@ -206,6 +206,22 @@ export const IconWrench = ({ className }: P) =>
     <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3.5 17.5a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.5-.5-.5-2.5z" />,
     className,
   );
+export const IconBox = ({ className }: P) =>
+  base(
+    <>
+      <path d="M3 7.5L12 3l9 4.5v9L12 21l-9-4.5z" />
+      <path d="M3 7.5L12 12l9-4.5M12 12v9" />
+    </>,
+    className,
+  );
+export const IconCard = ({ className }: P) =>
+  base(
+    <>
+      <rect x="2.5" y="5" width="19" height="14" rx="2" />
+      <path d="M2.5 10h19M6 15h4" />
+    </>,
+    className,
+  );
 export const IconSpinner = ({ className = "h-4 w-4" }: P) => (
   <svg viewBox="0 0 24 24" className={`${className} animate-spin`} aria-hidden="true" focusable="false">
     <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity=".25" strokeWidth="3" fill="none" />

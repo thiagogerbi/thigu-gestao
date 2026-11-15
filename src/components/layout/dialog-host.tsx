@@ -13,6 +13,8 @@ import { ClassDialog } from "@/features/classes/class-dialog";
 import { EnrollDialog } from "@/features/classes/enroll-dialog";
 import { CommissionRuleDialog } from "@/features/commissions/commission-rule-dialog";
 import { ProductDialog } from "@/features/services/product-dialog";
+import { ReturnDialog } from "@/features/stock/return-dialog";
+import { CreditLimitDialog, StockAdjustDialog, StockEntryDialog } from "@/features/stock/stock-dialogs";
 import {
   VehicleTransferDialog,
   WorkOrderApproveDialog,
@@ -89,6 +91,14 @@ function renderDialog(spec: DialogSpec, props: DialogProps) {
       return <WorkOrderCancelDialog {...props} workOrderId={spec.workOrderId} />;
     case "vehicleTransfer":
       return <VehicleTransferDialog {...props} itemId={spec.itemId} />;
+    case "stockEntry":
+      return <StockEntryDialog {...props} productId={spec.productId} />;
+    case "stockAdjust":
+      return <StockAdjustDialog {...props} productId={spec.productId} />;
+    case "counterReturn":
+      return <ReturnDialog {...props} saleId={spec.saleId} />;
+    case "creditLimit":
+      return <CreditLimitDialog {...props} clientId={spec.clientId} />;
     case "package":
       return <PackageDialog {...props} clientId={spec.clientId} />;
     case "subscription":

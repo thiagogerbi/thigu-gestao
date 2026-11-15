@@ -69,9 +69,11 @@ export function CashScreen() {
     if (r.ok) setOpening("");
   }
 
+  const stockOn = moduleAvailable(data.company, "estoque");
+  // com estoque, os produtos ficam na tela Estoque; sem ele, em Serviços e equipe
   const products = can(me.roles, "produtos.gerenciar") && (
-    <LinkButton href={nav.href("/servicos")} variant="secondary">
-      Produtos e serviços
+    <LinkButton href={nav.href(stockOn ? "/estoque" : "/servicos")} variant="secondary">
+      {stockOn ? "Estoque" : "Produtos e serviços"}
     </LinkButton>
   );
 
@@ -131,6 +133,11 @@ export function CashScreen() {
             <Button variant="secondary" onClick={() => dialogs.open({ kind: "cashReceive" })}>
               Receber conta
             </Button>
+            {data.counterSales.some((v) => v.payment === "avista") && (
+              <Button variant="secondary" onClick={() => dialogs.open({ kind: "counterReturn" })}>
+                Devolução
+              </Button>
+            )}
             {closeable && (
               <Button variant="secondary" onClick={() => dialogs.open({ kind: "cashClose" })}>
                 Fechar caixa

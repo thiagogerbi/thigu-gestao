@@ -2078,3 +2078,210 @@ describe("oficina no banco", () => {
     expect(r.r).toMatchObject({ appointments: 1, base_cents: 20000, amount_cents: 6000 });
   });
 });
+
+describe("loja no banco", () => {
+  let L = ""; // loja da Ana
+  let vend = "";
+  let cx = "";
+  let fin = "";
+  let prod = "";
+  let prod2 = "";
+  let cli = "";
+  let session = "";
+
+  const items = (productId: string | null, qty: number, cents: number) =>
+    JSON.stringify([
+      { product_id: productId, service_id: null, description: "Peça", quantity: qty, unit_cents: cents },
+    ]);
+  const sell = (
+    user: string,
+    json: string,
+    discount = 0,
+    method: string | null = "pix",
+    plan: string | null = null,
+    client: string | null = null,
+    req = randomUUID(),
+  ) =>
+    as(user, () =>
+      one<{ r: { sale_id: string; account_id: string; total_cents: number; duplicate: boolean } }>(
+        "select public.counter_sale($1, $2, $3::jsonb, $4, $5::payment_method, $6::jsonb, $7) as r",
+        [session, client, json, discount, method, plan, req],
+      ),
+    );
+  const stock = async (id: string) =>
+    (await one<{ s: number }>("select stock_qty as s from products where id = $1", [id])).s;
+
+  beforeAll(async () => {
+    vend = await newUser("vend@loja.test");
+    cx = await newUser("cx@loja.test");
+    fin = await newUser("fin@loja.test");
+    L = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Loja', 'balcao') as id"))).id;
+    await inviteAndAccept(L, U.ana, "vend@loja.test", "{vendedor}", vend);
+    await inviteAndAccept(L, U.ana, "cx@loja.test", "{caixa}", cx);
+    await inviteAndAccept(L, U.ana, "fin@loja.test", "{financeiro}", fin);
+    await as(U.ana, async () => {
+      prod = (
+        await one<{ id: string }>(
+          "insert into products (company_id, name, price_cents, barcode, sku) values ($1, 'Filtro', 3000, '7890001', 'F1') returning id",
+          [L],
+        )
+      ).id;
+      prod2 = (
+        await one<{ id: string }>(
+          "insert into products (company_id, name, price_cents) values ($1, 'Lâmpada', 2000) returning id",
+          [L],
+        )
+      ).id;
+    });
+    cli = (
+      await as(vend, () =>
+        one<{ id: string }>(
+          "insert into clients (company_id, name, phone, owner_id) values ($1, 'Zé', '(11) 90000-1', $2) returning id",
+          [L, vend],
+        ),
+      )
+    ).id;
+    session = (await as(cx, () => one<{ id: string }>("select public.open_cash($1, 10000) as id", [L]))).id;
+  });
+
+  it("estoque: só a soma das movimentações muda o saldo; caixa e vendedor não mexem; código de barras único", async () => {
+    await expect(as(cx, () => db.query("select public.stock_entry($1, 10, 1500, 'NF')", [prod]))).rejects.toThrow(
+      /não permite mexer no estoque/,
+    );
+    await as(fin, () => db.query("select public.stock_entry($1, 10, 1500, 'NF 1')", [prod]));
+    expect(await stock(prod)).toBe(10);
+    expect(
+      await one<{ cost_cents: number; track_stock: boolean }>(
+        "select cost_cents, track_stock from products where id = $1",
+        [prod],
+      ),
+    ).toMatchObject({ track_stock: true });
+    await expect(
+      as(U.ana, () => db.query("update products set stock_qty = 999 where id = $1", [prod])),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      as(U.ana, () => db.query("select public.stock_adjust($1, -11, 'ajuste', 'contagem')", [prod])),
+    ).rejects.toThrow(/negativo/);
+    await expect(
+      as(U.ana, () => db.query("select public.stock_adjust($1, 1, 'perda', 'avaria')", [prod])),
+    ).rejects.toThrow(/inválido/);
+    await as(U.ana, () => db.query("select public.stock_adjust($1, -1, 'perda', 'avaria')", [prod]));
+    expect(await stock(prod)).toBe(9);
+    await expect(db.query("delete from stock_movements where product_id = $1", [prod])).rejects.toThrow();
+    await expect(
+      as(U.ana, () =>
+        db.query("insert into products (company_id, name, price_cents, barcode) values ($1, 'Outro', 100, '7890001')", [
+          L,
+        ]),
+      ),
+    ).rejects.toThrow(/products_barcode_unique/);
+  });
+
+  it("venda à vista: baixa o estoque, não vende o que não tem, não duplica e limita o desconto", async () => {
+    await expect(sell(cx, items(prod, 20, 3000))).rejects.toThrow(/Estoque insuficiente de Filtro \(tem 9\)/);
+    await expect(sell(cx, items(prod, 2, 3000), 700)).rejects.toThrow(/10%/);
+    const req = randomUUID();
+    const r = await sell(cx, items(prod, 2, 3000), 600, "dinheiro", null, null, req);
+    expect(r.r).toMatchObject({ total_cents: 5400, duplicate: false });
+    expect((await sell(cx, items(prod, 2, 3000), 600, "dinheiro", null, null, req)).r).toMatchObject({
+      sale_id: r.r.sale_id,
+      duplicate: true,
+    });
+    expect(await stock(prod)).toBe(7);
+    // produto sem controle de estoque vende à vontade
+    await sell(cx, items(prod2, 5, 2000));
+    expect(await stock(prod2)).toBe(0);
+    // a venda antiga do caixa (cash_sale) passa pela mesma regra
+    await expect(
+      as(cx, () =>
+        db.query("select public.cash_sale($1, null, $2::jsonb, 'pix', $3)", [
+          session,
+          items(prod, 50, 3000),
+          randomUUID(),
+        ]),
+      ),
+    ).rejects.toThrow(/Estoque insuficiente/);
+  });
+
+  it("crediário: precisa de limite, respeita o disponível e cria as parcelas; o vendedor cobra no balcão", async () => {
+    const plan = (total: number) =>
+      JSON.stringify([
+        { number: 1, amount_cents: total / 2, due_date: "2026-12-10" },
+        { number: 2, amount_cents: total / 2, due_date: "2027-01-10" },
+      ]);
+    await expect(sell(vend, items(prod2, 1, 2000), 0, null, plan(2000), cli)).rejects.toThrow(/não tem crediário/);
+    await expect(as(vend, () => db.query("select public.set_credit_limit($1, 5000)", [cli]))).rejects.toThrow(
+      /financeiro ou o dono/,
+    );
+    await as(fin, () => db.query("select public.set_credit_limit($1, 5000)", [cli]));
+    await expect(sell(vend, items(prod2, 3, 2000), 0, null, plan(6000), cli)).rejects.toThrow(
+      /limite do crediário \(disponível R\$\s50,00\)/,
+    );
+    await expect(sell(vend, items(prod2, 1, 2000), 0, null, plan(2000), null)).rejects.toThrow(/cliente do crediário/);
+    const r = await sell(vend, items(prod2, 2, 2000), 0, null, plan(4000), cli);
+    const accs = await as(vend, () =>
+      rows<{ origin: string; amount_cents: number }>(
+        "select origin, amount_cents from accounts where counter_sale_id = $1 order by installment_number",
+        [r.r.sale_id],
+      ),
+    );
+    expect(accs.map((a) => [a.origin, Number(a.amount_cents)])).toEqual([
+      ["crediario", 2000],
+      ["crediario", 2000],
+    ]);
+    expect(Number((await as(vend, () => one<{ u: number }>("select public.credit_used($1) as u", [cli]))).u)).toBe(
+      4000,
+    );
+    // a próxima compra já não cabe (sobra R$ 10)
+    await expect(sell(vend, items(prod2, 1, 2000), 0, null, plan(2000), cli)).rejects.toThrow(/disponível R\$\s10,00/);
+    // recebe a 1ª parcela no caixa e o limite volta
+    const first =
+      accs.length &&
+      (
+        await one<{ id: string }>("select id from accounts where counter_sale_id = $1 and installment_number = 1", [
+          r.r.sale_id,
+        ])
+      ).id;
+    await as(vend, () =>
+      db.query("select public.cash_receive($1, $2, 2000, 'pix', $3)", [session, first, randomUUID()]),
+    );
+    expect(Number((await one<{ u: number }>("select public.credit_used($1) as u", [cli])).u)).toBe(2000);
+    // crediário não se devolve pelo caixa
+    const item = (await one<{ id: string }>("select id from cash_sale_items where sale_id = $1", [r.r.sale_id])).id;
+    await expect(
+      as(cx, () =>
+        db.query("select public.counter_return($1, $2::jsonb, 'dinheiro', $3)", [
+          r.r.sale_id,
+          JSON.stringify([{ item_id: item, quantity: 1 }]),
+          randomUUID(),
+        ]),
+      ),
+    ).rejects.toThrow(/crediário/);
+  });
+
+  it("devolução: proporcional ao desconto, volta ao estoque, sai do caixa e não passa do vendido", async () => {
+    await as(fin, () => db.query("select public.stock_entry($1, 5, null, '')", [prod]));
+    const before = await stock(prod);
+    const r = await sell(cx, items(prod, 2, 3000), 600, "dinheiro"); // R$ 54 por R$ 60
+    const item = (await one<{ id: string }>("select id from cash_sale_items where sale_id = $1", [r.r.sale_id])).id;
+    const ret = (qty: number, req = randomUUID()) =>
+      as(cx, () =>
+        one<{ r: { refund_cents: number; duplicate: boolean } }>(
+          "select public.counter_return($1, $2::jsonb, 'dinheiro', $3) as r",
+          [r.r.sale_id, JSON.stringify([{ item_id: item, quantity: qty }]), req],
+        ),
+      );
+    await expect(ret(3)).rejects.toThrow(/Só dá para devolver 2/);
+    const req = randomUUID();
+    expect((await ret(1, req)).r).toEqual({ duplicate: false, refund_cents: 2700 });
+    expect((await ret(1, req)).r).toEqual({ duplicate: true });
+    expect(await stock(prod)).toBe(before - 2 + 1);
+    await ret(1);
+    await expect(ret(1)).rejects.toThrow(/Só dá para devolver 0/);
+    // o caixa vê a saída: fechar confere o dinheiro (100 de troco + vendas em dinheiro − devoluções)
+    const close = await as(fin, () =>
+      one<{ r: { expected_cents: number } }>("select public.close_cash($1, 0, 'conferência') as r", [session]),
+    );
+    expect(Number(close.r.expected_cents)).toBe(10000 + 5400 + 5400 - 2700 - 2700);
+  });
+});

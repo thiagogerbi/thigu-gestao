@@ -173,6 +173,17 @@ Ao criar a empresa, a pessoa escolhe o ramo (dá para trocar depois em **Minha e
 - Quem vende pacotes e cria mensalidades: administrador, gestor, recepção e financeiro. O profissional vê os pacotes dos próprios pacientes. As cobranças só aparecem para quem vê o financeiro, que também tem o botão "Cobrar pelo WhatsApp" nas mensalidades atrasadas.
 - No celular, quando há mais de 5 itens no menu, os últimos vão para "Mais".
 
+### Loja: estoque, venda no balcão e crediário (Fase 4, parte A)
+
+Para lojas, autopeças e comércio de bairro (ramo "Loja e venda no balcão"; o ramo de pedidos também tem). Telas **Estoque**, **Caixa** e **Crediário**.
+
+- **Produto completo:** código interno, código de barras (único na empresa), custo, preço, margem, estoque mínimo, tamanho e cor (cada combinação é um produto, ex.: camiseta P/M/G) e "serve em" para autopeças (modelos e anos, que entram na busca).
+- **Estoque:** o saldo de cada produto é a soma das movimentações (entrada, venda, devolução, ajuste, perda), que nunca são apagadas; só o banco altera o saldo. Entrada de mercadoria com custo e fornecedor/nota (o custo do produto passa a ser o da última compra). Ajuste pela contagem e registro de perda, sempre com motivo; o estoque não fica negativo. Avisos de abaixo do mínimo e zerados, valor em estoque pelo custo e histórico de cada produto. Quem mexe: dono, gestor e financeiro.
+- **Venda rápida no caixa:** leitor de código de barras (o código + Enter adiciona o produto) ou busca por nome, código ou carro ("pastilha onix"). A venda baixa o estoque e é recusada se faltar produto. Desconto: dono e gestor à vontade; os demais até 10% da venda. Tudo pela função `counter_sale`, que também passou a valer para a venda simples do caixa (`cash_sale`).
+- **Crediário (fiado):** o financeiro ou o dono liberam o crediário para o cliente com um limite. Na venda, "Crediário" vira parcelas a receber (`origin = 'crediario'`) no nome do cliente, em até 10 vezes, e a venda que passar do disponível é recusada. A tela Crediário mostra quanto cada cliente deve, o que está atrasado, "Cobrar pelo WhatsApp" com a mensagem pronta e "Receber parcela" no caixa. Recepção, caixa e, no comércio, o vendedor veem essas parcelas para cobrar no balcão; contas a pagar continuam só para o financeiro.
+- **Devolução:** escolhe-se a venda e o que volta; o item volta para o estoque e o dinheiro sai do caixa aberto, proporcional ao desconto da venda (`counter_return`). Não devolve mais do que foi vendido. Para trocar, devolve-se e faz-se uma venda nova. Venda no crediário é resolvida no financeiro (cancelar parcelas).
+- Na prévia: empresa **Kennedy Autopeças**.
+
 ### Oficina: ordem de serviço (Fase 3)
 
 Para mecânica, funilaria, auto elétrica e lava-rápido (ramo "Oficina e serviços automotivos"). Tela **Oficina**.
@@ -215,7 +226,7 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 
 ## O que funciona, o que é simulado e o que está pendente
 
-### Testado automaticamente (`npm test` — 148 testes)
+### Testado automaticamente (`npm test` — 159 testes)
 
 - Regras de dinheiro, datas, divisão de parcelas, saldo e situação das contas, totais de proposta e matriz de permissões.
 - **Caso de aceitação completo** no motor da prévia **e no banco** (migrações reais rodando no PGlite):
@@ -225,6 +236,7 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 - Ramos e papéis novos, no motor da prévia **e no banco**: o catálogo do banco é igual ao do aplicativo; só o administrador troca o ramo e ninguém troca o plano; recepção e caixa cuidam dos clientes de todos e o profissional só dos próprios; nenhum dos três vê negociações, vendas ou financeiro; pets só existem com o módulo ligado, são lidos por quem vê o tutor e gravados por quem edita o tutor, nunca entre empresas; trocar de ramo não apaga os campos do ramo anterior.
 - Pacotes e mensalidades, no motor da prévia **e no banco**: venda em parcelas sem duplicar; só quem pode vende; atendido com pacote usa sessão sem gerar conta e não passa do total; desfazer devolve a sessão; pacote de outro cliente, vencido ou encerrado não entra no horário; mensalidade gera uma cobrança por mês até o mês atual, sem duplicar, e para ao ser cancelada; empresas sem o módulo não têm nada disso.
 - Agenda, no motor da prévia **e no banco**: cada profissional vê e marca só na própria agenda; quem atende um paciente do colega passa a vê-lo, mas não edita a ficha; a situação não muda direto na tabela; atendido gera a conta a receber, desfazer cancela, e com pagamento registrado não desfaz; falta cobrada vira conta; horário encerrado não se remarca; a ficha de atendimento só é lida por quem escreveu e não pode ser alterada nem apagada; empresas sem o módulo não têm agenda.
+- Loja, no motor da prévia **e no banco**: saldo do estoque igual à soma das movimentações, ninguém altera o saldo direto, estoque não fica negativo, caixa e vendedor não mexem no estoque, código de barras único; venda baixa o estoque, recusa o que falta, não duplica e limita o desconto a 10% para quem não é dono; crediário só com limite, dentro do disponível, com parcelas certas, e o limite volta quando a parcela é paga; devolução proporcional ao desconto, volta ao estoque, sai do caixa e não passa do vendido; o salão (caixa sem estoque) continua vendendo sem estoque e sem crediário.
 - Oficina, no motor da prévia **e no banco**: placa única e no formato certo; só o atendimento abre OS, com número sem buraco e sem duplicar; o mecânico só mexe nas OS dele, não dá desconto, não entrega e só move entre peça, serviço e pronto; desconto do atendimento até 10%; aprovação pelo link sem login, que recusa código inválido e não decide duas vezes; não entrega com item pendente; parcelas precisam somar o total; fotos só no caminho da OS e até o limite do plano; carro com OS aberta não muda de dono; comissão só sobre a mão de obra entregue no mês (aplicativo e banco chegam ao mesmo valor).
 - Horário, caixa, comissões, turmas e agendamento online, no motor da prévia **e no banco**: bloqueio só na agenda que a pessoa cuida; um caixa aberto por vez, venda e recebimento sem duplicar, esperado da gaveta certo, só financeiro ou dono fecham; recepção e caixa não veem contas a pagar; comissão pela regra mais específica, com o mês contado no horário de Brasília, fechada uma vez e só depois do mês acabar (aplicativo e banco chegam ao mesmo valor); turma não passa das vagas e o instrutor marca presença dos próprios alunos; o link público só funciona ligado, recusa horário fora do atendimento, ocupado ou muito próximo, não cria cadastro repetido e limita 3 horários por celular.
 - Convites: o vínculo só existe depois do aceite; o convite espera quem ainda não tem conta; e-mail não confirmado não vê nem aceita; recusar e cancelar não criam vínculo; só o administrador convida e cancela; quem teve o acesso removido só volta aceitando um novo convite.
@@ -266,7 +278,8 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 - Ramos: as telas de negociações, propostas, financeiro, tarefas e o guia da prévia ainda dizem "cliente" em todos os ramos; a troca de nome vale para o menu, a lista, a ficha, o cadastro e a visão geral.
 - Lembrete automático pelo WhatsApp oficial: depende de conta WhatsApp Business verificada pela Meta (ver a conversa da Fase 2).
 - Oficina: fotos dependem de o bucket `os-fotos` existir no Supabase (a migração cria quando o esquema `storage` existe; os testes locais não têm Storage). Busca automática de dados pela placa (serviço pago), estoque de peças (Fase 4) e nota fiscal de serviço ficam para depois.
-- Caixa: sangria e reforço no meio do dia; estoque dos produtos.
+- Caixa: sangria e reforço no meio do dia.
+- Loja: vale-troca (crédito do cliente na troca), comissão do vendedor, importar produtos de planilha, pedido de compra ao fornecedor e nota fiscal (NFC-e, por emissor parceiro).
 - Agendamento online: o cliente desmarcar pelo link; escolher "qualquer profissional".
 - Mensalidades: cobrança automática no cartão (hoje a cobrança é criada, mas o pagamento é registrado à mão).
 - Agenda: remarcar ou cancelar toda a série de uma vez; ver a semana em grade de horários; registro de quem abriu cada ficha de atendimento (hoje só o autor lê, então não há outros acessos para registrar).
@@ -276,7 +289,7 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 - As telas de convite (lista em **Minha empresa** e aviso para quem foi convidado) só existem na versão real e ainda não foram vistas rodando contra um Supabase.
 - Paginação ao carregar dados (hoje tudo da empresa é carregado de uma vez, o que serve para pequenas empresas).
 - Evoluções previstas: receitas e despesas recorrentes, importação e exportação de planilhas, lembretes simples.
-- **Fora do escopo:** integração bancária, cobrança automática, WhatsApp oficial, emissão fiscal, estoque e ERP.
+- **Fora do escopo:** integração bancária, cobrança automática, WhatsApp oficial, emissão fiscal e ERP.
 
 **Não está pronto para produção** só porque compila e passa nos testes: falta validar com Supabase real, testar com usuários e revisar a segurança antes de publicar.
 

@@ -52,6 +52,7 @@ import { STAGE_LABEL, type Activity, type CompanyData, type Member, type Subscri
 import { visibleData } from "@/lib/domain/visibility";
 import { isPlate, normalizePlate } from "@/lib/domain/work-orders";
 import { runWorkOrder } from "@/lib/preview/engine-work-orders";
+import { runStock } from "@/lib/preview/engine-stock";
 
 export interface EngineContext {
   now: Date;
@@ -234,6 +235,14 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
     case "workOrder.cancel":
     case "workOrder.addPhoto":
       return runWorkOrder(d, actor, a, { nowIso, newId: ctx.newId, visible, log });
+
+    case "cash.sale":
+    case "product.save":
+    case "stock.entry":
+    case "stock.adjust":
+    case "counter.return":
+    case "client.setCreditLimit":
+      return runStock(d, actor, a, { nowIso, today, newId: ctx.newId, visible, log, clientWord: t.Cliente });
 
     case "item.setActive": {
       const item = d.items.find((i) => i.id === a.id);
@@ -609,21 +618,6 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
       return { ok: true, message: "Bloqueio removido.", id: a.id };
     }
 
-    case "product.save": {
-      if (!moduleEnabled(d.company, "caixa")) return fail(MODULE_OFF);
-      if (!can(roles, "produtos.gerenciar")) return fail("Somente o administrador ou o gestor cadastram produtos.");
-      const values = { name: a.name, priceCents: a.priceCents, active: a.active };
-      if (a.id) {
-        const p = d.products.find((x) => x.id === a.id);
-        if (!p) return fail("Produto não encontrado.");
-        Object.assign(p, values);
-        return { ok: true, message: `Produto ${a.name} salvo.`, id: p.id };
-      }
-      const id = ctx.newId();
-      d.products.push({ id, ...values });
-      return { ok: true, message: `Produto ${a.name} cadastrado.`, id };
-    }
-
     case "cash.open": {
       if (!moduleEnabled(d.company, "caixa") || !can(roles, "caixa.operar"))
         return fail("Seu papel nesta empresa não permite usar o caixa.");
@@ -641,51 +635,6 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
         notes: "",
       });
       return { ok: true, message: `Caixa aberto com ${formatBRL(a.openingCents)} de troco.`, id };
-    }
-
-    case "cash.sale": {
-      const session = d.cashSessions.find((s) => s.id === a.sessionId);
-      if (!moduleEnabled(d.company, "caixa") || !can(roles, "caixa.operar") || !session)
-        return fail("Caixa não encontrado.");
-      if (session.closedAt) return fail("Este caixa já foi fechado. Abra o caixa de novo.");
-      if (a.clientId && !findVisibleClient(a.clientId)) return fail(`${t.Cliente} não encontrado.`);
-      const total = a.items.reduce((s, i) => s + i.quantity * i.unitCents, 0);
-      const accountId = ctx.newId();
-      d.accounts.push({
-        id: accountId,
-        kind: "receber",
-        clientId: a.clientId,
-        supplier: null,
-        description: `Venda no caixa: ${a.items[0].description}${a.items.length > 1 ? ` e mais ${a.items.length - 1}` : ""}`,
-        origin: "caixa",
-        saleId: null,
-        installmentNumber: 1,
-        installmentCount: 1,
-        amountCents: total,
-        dueDate: today,
-        category: null,
-        canceledAt: null,
-        canceledBy: null,
-        cancelReason: null,
-        createdAt: nowIso,
-      });
-      for (const i of a.items) d.cashSaleItems.push({ id: ctx.newId(), accountId, ...i });
-      d.movements.push({
-        id: ctx.newId(),
-        accountId,
-        direction: "entrada",
-        amountCents: total,
-        paidOn: today,
-        method: a.method,
-        registeredBy: me,
-        createdAt: nowIso,
-        undoneAt: null,
-        undoneBy: null,
-        undoReason: null,
-        cashSessionId: session.id,
-      });
-      if (a.clientId) log("caixa", `Venda no caixa: ${formatBRL(total)}`, a.clientId);
-      return { ok: true, message: `Venda de ${formatBRL(total)} registrada.`, id: accountId };
     }
 
     case "cash.receive": {

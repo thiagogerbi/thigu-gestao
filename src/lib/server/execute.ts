@@ -35,6 +35,7 @@ import { packageError, packageView, startsOnError } from "@/lib/domain/recurring
 import { STAGE_LABEL, type Appointment, type AppointmentStatus, type Role, type WorkHours } from "@/lib/domain/types";
 import { isPlate, normalizePlate } from "@/lib/domain/work-orders";
 import { executeWorkOrder } from "@/lib/server/execute-work-orders";
+import { executeStock } from "@/lib/server/execute-stock";
 import type { ServerSupabase } from "@/lib/supabase/server";
 import "server-only";
 
@@ -225,6 +226,27 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
       const flags = await companyFlags();
       if (!flags || !moduleEnabled(flags, "ordem_servico")) return fail(MODULE_OFF);
       return executeWorkOrder(ctx, a, dbFail);
+    }
+
+    case "cash.sale":
+    case "product.save":
+    case "stock.entry":
+    case "stock.adjust":
+    case "counter.return":
+    case "client.setCreditLimit": {
+      const flags = await companyFlags();
+      if (!flags || !moduleEnabled(flags, "caixa")) return fail(MODULE_OFF);
+      if (
+        (a.type === "stock.entry" || a.type === "stock.adjust" || a.type === "client.setCreditLimit") &&
+        !moduleEnabled(flags, "estoque")
+      )
+        return fail(MODULE_OFF);
+      if (a.type === "stock.entry" || a.type === "stock.adjust") {
+        if (!need("estoque.movimentar")) return fail("Seu papel nesta empresa não permite mexer no estoque.");
+      }
+      if (a.type === "client.setCreditLimit" && !need("crediario.limite"))
+        return fail("Somente o financeiro ou o dono definem o limite de crediário.");
+      return executeStock(ctx, a, dbFail);
     }
 
     case "item.setActive": {
@@ -594,49 +616,11 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
       return { ok: true, message: "Bloqueio removido.", id: a.id };
     }
 
-    case "product.save": {
-      if (!need("produtos.gerenciar")) return fail("Somente o administrador ou o gestor cadastram produtos.");
-      const values = { name: a.name, price_cents: a.priceCents, active: a.active };
-      const { data, error } = a.id
-        ? await sb.from("products").update(values).eq("id", a.id).eq("company_id", companyId).select("id")
-        : await sb
-            .from("products")
-            .insert({ ...values, company_id: companyId })
-            .select("id");
-      if (error) return dbFail(error);
-      if (!data?.length) return fail("Produto não encontrado.");
-      return { ok: true, message: a.id ? `Produto ${a.name} salvo.` : `Produto ${a.name} cadastrado.`, id: data[0].id };
-    }
-
     case "cash.open": {
       if (!need("caixa.operar")) return fail("Seu papel nesta empresa não permite usar o caixa.");
       const { data, error } = await sb.rpc("open_cash", { p_company: companyId, p_opening: a.openingCents });
       if (error) return dbFail(error);
       return { ok: true, message: `Caixa aberto com ${formatBRL(a.openingCents)} de troco.`, id: data as string };
-    }
-
-    case "cash.sale": {
-      if (!need("caixa.operar")) return fail("Seu papel nesta empresa não permite usar o caixa.");
-      const { data, error } = await sb.rpc("cash_sale", {
-        p_session: a.sessionId,
-        p_client: a.clientId,
-        p_items: a.items.map((i) => ({
-          product_id: i.productId,
-          service_id: i.serviceId,
-          description: i.description,
-          quantity: i.quantity,
-          unit_cents: i.unitCents,
-        })),
-        p_method: a.method,
-        p_request: a.requestId,
-      });
-      if (error) return dbFail(error);
-      const total = a.items.reduce((s, i) => s + i.quantity * i.unitCents, 0);
-      return {
-        ok: true,
-        message: `Venda de ${formatBRL(total)} registrada.`,
-        id: (data as { account_id: string }).account_id,
-      };
     }
 
     case "cash.receive": {

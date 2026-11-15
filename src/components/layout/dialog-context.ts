@@ -23,6 +23,10 @@ export type DialogSpec =
   | { kind: "woDeliver"; workOrderId: string }
   | { kind: "woCancel"; workOrderId: string }
   | { kind: "vehicleTransfer"; itemId: string }
+  | { kind: "stockEntry"; productId?: string }
+  | { kind: "stockAdjust"; productId: string }
+  | { kind: "counterReturn"; saleId?: string }
+  | { kind: "creditLimit"; clientId?: string }
   | { kind: "package"; clientId?: string }
   | { kind: "subscription"; clientId?: string; subscriptionId?: string }
   | { kind: "service"; serviceId?: string }
