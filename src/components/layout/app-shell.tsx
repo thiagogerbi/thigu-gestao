@@ -9,6 +9,7 @@ import {
   IconCheck,
   IconBox,
   IconCard,
+  IconClipboard,
   IconColumns,
   IconGroup,
   IconHome,
@@ -79,6 +80,14 @@ function useNavItems() {
       label: "Caixa",
       icon: IconRegister,
       show: moduleAvailable(data.company, "caixa") && can(me.roles, "caixa.operar"),
+    },
+    {
+      href: `${basePath}/pedidos`,
+      label: "Pedidos",
+      icon: IconClipboard,
+      show:
+        moduleAvailable(data.company, "pedidos") &&
+        (can(me.roles, "pedidos.ver_todos") || data.resources.some((r) => r.userId === me.userId)),
     },
     {
       href: `${basePath}/estoque`,

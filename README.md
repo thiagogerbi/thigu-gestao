@@ -173,6 +173,16 @@ Ao criar a empresa, a pessoa escolhe o ramo (dá para trocar depois em **Minha e
 - Quem vende pacotes e cria mensalidades: administrador, gestor, recepção e financeiro. O profissional vê os pacotes dos próprios pacientes. As cobranças só aparecem para quem vê o financeiro, que também tem o botão "Cobrar pelo WhatsApp" nas mensalidades atrasadas.
 - No celular, quando há mais de 5 itens no menu, os últimos vão para "Mais".
 
+### Pedidos com prazo e receita de óculos (Fase 4, parte B)
+
+Para óticas, costura, lavanderia e gráficas (ramo "Pedidos com prazo de entrega"). Tela **Pedidos** e seções na ficha do cliente.
+
+- **Novo pedido:** cliente (ou cliente novo ali mesmo), o que é, detalhes, itens com valor (produtos do estoque saem da prateleira na hora, e o pedido é recusado se faltar), data prometida, técnico e, na ótica, a receita usada. O **sinal** pago na hora entra no caixa aberto. Numeração por empresa, sem duplicar (`open_order`).
+- **Quadro de pedidos:** recebido, em produção, no laboratório ou fornecedor, pronto. Data prometida em cada cartão ("amanhã", "atrasado 2 dias", em vermelho), quanto falta pagar e busca por cliente, descrição ou número. O técnico vê só os pedidos dele (e os clientes deles) e move entre em produção, no laboratório e pronto. "Avisar que está pronto" pelo WhatsApp.
+- **Entrega:** o restante (total − sinal) é recebido no caixa na hora ou parcelado em contas a receber (`origin = 'pedido'`). **Cancelar** devolve os produtos ao estoque e, se combinado, o sinal pelo caixa. Linha do tempo de cada pedido; nada é apagado.
+- **Receita de óculos** (dado de saúde): OD e OE com esférico, cilíndrico, eixo e adição, DNP de cada olho, médico, data do exame e validade (1 ano por padrão). O banco confere passos de 0,25 e o eixo junto com o cilíndrico. Não se corrige: lança-se uma nova. Só quem atende lê e lança (dono, atendente e técnico); o caixa e o financeiro não veem. Lista "Receitas vencendo" com lembrete do exame anual pelo WhatsApp.
+- Na prévia: empresa **Ótica Kennedy**.
+
 ### Loja: estoque, venda no balcão e crediário (Fase 4, parte A)
 
 Para lojas, autopeças e comércio de bairro (ramo "Loja e venda no balcão"; o ramo de pedidos também tem). Telas **Estoque**, **Caixa** e **Crediário**.
@@ -226,7 +236,7 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 
 ## O que funciona, o que é simulado e o que está pendente
 
-### Testado automaticamente (`npm test` — 159 testes)
+### Testado automaticamente (`npm test` — 168 testes)
 
 - Regras de dinheiro, datas, divisão de parcelas, saldo e situação das contas, totais de proposta e matriz de permissões.
 - **Caso de aceitação completo** no motor da prévia **e no banco** (migrações reais rodando no PGlite):
@@ -236,6 +246,7 @@ Enquanto não existe cobrança, toda empresa nasce no plano "empresa" e nada é 
 - Ramos e papéis novos, no motor da prévia **e no banco**: o catálogo do banco é igual ao do aplicativo; só o administrador troca o ramo e ninguém troca o plano; recepção e caixa cuidam dos clientes de todos e o profissional só dos próprios; nenhum dos três vê negociações, vendas ou financeiro; pets só existem com o módulo ligado, são lidos por quem vê o tutor e gravados por quem edita o tutor, nunca entre empresas; trocar de ramo não apaga os campos do ramo anterior.
 - Pacotes e mensalidades, no motor da prévia **e no banco**: venda em parcelas sem duplicar; só quem pode vende; atendido com pacote usa sessão sem gerar conta e não passa do total; desfazer devolve a sessão; pacote de outro cliente, vencido ou encerrado não entra no horário; mensalidade gera uma cobrança por mês até o mês atual, sem duplicar, e para ao ser cancelada; empresas sem o módulo não têm nada disso.
 - Agenda, no motor da prévia **e no banco**: cada profissional vê e marca só na própria agenda; quem atende um paciente do colega passa a vê-lo, mas não edita a ficha; a situação não muda direto na tabela; atendido gera a conta a receber, desfazer cancela, e com pagamento registrado não desfaz; falta cobrada vira conta; horário encerrado não se remarca; a ficha de atendimento só é lida por quem escreveu e não pode ser alterada nem apagada; empresas sem o módulo não têm agenda.
+- Pedidos e receitas, no motor da prévia **e no banco**: receita só para quem atende, com passos de 0,25 e eixo junto do cilíndrico, sem apagar; receita de outro cliente não entra no pedido; só o atendimento abre, com data de hoje em diante, sinal no caixa e estoque conferido, sem duplicar; o técnico só vê e move os dele e não entrega; entrega no caixa ou parcelada, sem repetir; cancelar devolve estoque e sinal; o caixa confere o dinheiro no fechamento.
 - Loja, no motor da prévia **e no banco**: saldo do estoque igual à soma das movimentações, ninguém altera o saldo direto, estoque não fica negativo, caixa e vendedor não mexem no estoque, código de barras único; venda baixa o estoque, recusa o que falta, não duplica e limita o desconto a 10% para quem não é dono; crediário só com limite, dentro do disponível, com parcelas certas, e o limite volta quando a parcela é paga; devolução proporcional ao desconto, volta ao estoque, sai do caixa e não passa do vendido; o salão (caixa sem estoque) continua vendendo sem estoque e sem crediário.
 - Oficina, no motor da prévia **e no banco**: placa única e no formato certo; só o atendimento abre OS, com número sem buraco e sem duplicar; o mecânico só mexe nas OS dele, não dá desconto, não entrega e só move entre peça, serviço e pronto; desconto do atendimento até 10%; aprovação pelo link sem login, que recusa código inválido e não decide duas vezes; não entrega com item pendente; parcelas precisam somar o total; fotos só no caminho da OS e até o limite do plano; carro com OS aberta não muda de dono; comissão só sobre a mão de obra entregue no mês (aplicativo e banco chegam ao mesmo valor).
 - Horário, caixa, comissões, turmas e agendamento online, no motor da prévia **e no banco**: bloqueio só na agenda que a pessoa cuida; um caixa aberto por vez, venda e recebimento sem duplicar, esperado da gaveta certo, só financeiro ou dono fecham; recepção e caixa não veem contas a pagar; comissão pela regra mais específica, com o mês contado no horário de Brasília, fechada uma vez e só depois do mês acabar (aplicativo e banco chegam ao mesmo valor); turma não passa das vagas e o instrutor marca presença dos próprios alunos; o link público só funciona ligado, recusa horário fora do atendimento, ocupado ou muito próximo, não cria cadastro repetido e limita 3 horários por celular.

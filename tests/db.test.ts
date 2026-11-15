@@ -2285,3 +2285,200 @@ describe("loja no banco", () => {
     expect(Number(close.r.expected_cents)).toBe(10000 + 5400 + 5400 - 2700 - 2700);
   });
 });
+
+describe("pedidos no banco", () => {
+  let T = ""; // ótica da Ana
+  let atend = "";
+  let tec = "";
+  let tec2 = "";
+  let fin = "";
+  let resTec = "";
+  let cli = "";
+  let cli2 = "";
+  let frame = "";
+  let session = "";
+
+  const items = (productId: string | null, qty = 1, cents = 30000) =>
+    JSON.stringify([{ product_id: productId, description: "Armação", quantity: qty, unit_cents: cents }]);
+  const open = (
+    user: string,
+    extra: {
+      items?: string;
+      down?: number;
+      method?: string | null;
+      client?: string;
+      promised?: string;
+      rx?: string | null;
+      req?: string;
+    } = {},
+  ) =>
+    as(user, () =>
+      one<{ r: { id: string; number: number; duplicate: boolean } }>(
+        "select public.open_order($1, 'Óculos', '', $2::date, $3, $4, $5::jsonb, $6, $7::payment_method, $8) as r",
+        [
+          extra.client ?? cli,
+          extra.promised ?? "2099-01-10",
+          resTec,
+          extra.rx ?? null,
+          extra.items ?? items(null),
+          extra.down ?? 0,
+          extra.method ?? null,
+          extra.req ?? randomUUID(),
+        ],
+      ),
+    );
+  const stock = async (id: string) =>
+    (await one<{ s: number }>("select stock_qty as s from products where id = $1", [id])).s;
+
+  beforeAll(async () => {
+    atend = await newUser("atend@otica.test");
+    tec = await newUser("tec@otica.test");
+    tec2 = await newUser("tec2@otica.test");
+    fin = await newUser("fin@otica.test");
+    T = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Ótica', 'pedidos') as id"))).id;
+    await inviteAndAccept(T, U.ana, "atend@otica.test", "{recepcao}", atend);
+    await inviteAndAccept(T, U.ana, "tec@otica.test", "{profissional}", tec);
+    await inviteAndAccept(T, U.ana, "tec2@otica.test", "{profissional}", tec2);
+    await inviteAndAccept(T, U.ana, "fin@otica.test", "{financeiro}", fin);
+    await as(U.ana, async () => {
+      resTec = (
+        await one<{ id: string }>(
+          "insert into resources (company_id, name, user_id) values ($1, 'Otávio', $2) returning id",
+          [T, tec],
+        )
+      ).id;
+      await db.query("insert into resources (company_id, name, user_id) values ($1, 'Outro', $2)", [T, tec2]);
+      frame = (
+        await one<{ id: string }>(
+          "insert into products (company_id, name, price_cents) values ($1, 'Armação', 30000) returning id",
+          [T],
+        )
+      ).id;
+    });
+    await as(fin, () => db.query("select public.stock_entry($1, 2, 12000, '')", [frame]));
+    cli = (
+      await as(atend, () =>
+        one<{ id: string }>(
+          "insert into clients (company_id, name, owner_id) values ($1, 'Beatriz', $2) returning id",
+          [T, atend],
+        ),
+      )
+    ).id;
+    cli2 = (
+      await as(atend, () =>
+        one<{ id: string }>("insert into clients (company_id, name, owner_id) values ($1, 'Carlos', $2) returning id", [
+          T,
+          atend,
+        ]),
+      )
+    ).id;
+    session = (await as(atend, () => one<{ id: string }>("select public.open_cash($1, 0) as id", [T]))).id;
+  });
+
+  it("receita: quem atende lança e lê; caixa e financeiro não; valores conferidos; não se apaga", async () => {
+    const insert = (user: string, odSph: number, odCyl: number | null, odAxis: number | null, client = cli) =>
+      as(user, () =>
+        one<{ id: string }>(
+          `insert into prescriptions (company_id, client_id, examined_on, valid_until, od_sph, od_cyl, od_axis, oe_sph, created_by)
+           values ($1, $2, '2026-11-01', '2027-11-01', $3, $4, $5, -1.00, $6) returning id`,
+          [T, client, odSph, odCyl, odAxis, user],
+        ),
+      );
+    const rx = await insert(atend, -1.25, -0.5, 180);
+    expect(rx.id).toBeTruthy();
+    await insert(tec, 2, null, null).catch(() => null); // o técnico só lança para cliente que ele vê
+    await expect(insert(fin, -1, null, null)).rejects.toThrow(/row-level security/);
+    await expect(insert(atend, -1.3, null, null)).rejects.toThrow(/check constraint/);
+    await expect(insert(atend, -1, -0.5, null)).rejects.toThrow(/check constraint/);
+    expect(await as(fin, () => rows("select id from prescriptions where company_id = $1", [T]))).toHaveLength(0);
+    expect(
+      (await as(atend, () => rows("select id from prescriptions where company_id = $1", [T]))).length,
+    ).toBeGreaterThan(0);
+    await expect(db.query("delete from prescriptions where id = $1", [rx.id])).rejects.toThrow();
+    // receita de outro cliente não entra no pedido
+    await expect(open(atend, { client: cli2, rx: rx.id })).rejects.toThrow(/não é deste cliente/);
+  });
+
+  it("abrir: sinal no caixa, estoque, numeração sem duplicar; o técnico não abre", async () => {
+    await expect(open(tec)).rejects.toThrow(/não encontrado|não permite abrir/);
+    await expect(open(atend, { promised: "2020-01-01" })).rejects.toThrow(/hoje ou depois/);
+    await expect(open(atend, { items: items(frame, 3) })).rejects.toThrow(/Estoque insuficiente/);
+    await expect(open(atend, { items: items(null, 1, 10000), down: 20000, method: "pix" })).rejects.toThrow(
+      /sinal não pode passar/,
+    );
+    const req = randomUUID();
+    const r = await open(atend, { items: items(frame, 1), down: 10000, method: "dinheiro", req });
+    expect(r.r).toMatchObject({ number: 1, duplicate: false });
+    expect((await open(atend, { items: items(frame, 1), down: 10000, method: "dinheiro", req })).r).toMatchObject({
+      id: r.r.id,
+      duplicate: true,
+    });
+    expect(await stock(frame)).toBe(1);
+    const acc = await one<{ origin: string; amount_cents: number }>(
+      "select origin, amount_cents from accounts where order_id = $1",
+      [r.r.id],
+    );
+    expect([acc.origin, Number(acc.amount_cents)]).toEqual(["pedido", 10000]);
+    // ninguém grava direto
+    await expect(
+      as(U.ana, () => db.query("update orders set stage = 'entregue' where id = $1", [r.r.id])),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it("etapas e entrega: técnico move os dele; entrega no caixa ou parcelada; cancelamento devolve estoque e sinal", async () => {
+    const o1 = (await open(atend, { items: items(null, 1, 50000), down: 20000, method: "pix" })).r.id;
+    expect(await as(tec2, () => rows("select id from orders where id = $1", [o1]))).toHaveLength(0);
+    expect(await as(tec, () => rows("select id from clients where id = $1", [cli]))).toHaveLength(1);
+    await expect(as(tec2, () => db.query("select public.move_order($1, 'producao')", [o1]))).rejects.toThrow(
+      /não encontrado/,
+    );
+    await as(tec, () => db.query("select public.move_order($1, 'pronto')", [o1]));
+    await expect(as(tec, () => db.query("select public.move_order($1, 'recebido')", [o1]))).rejects.toThrow(
+      /técnico move/,
+    );
+    await expect(
+      as(tec, () => db.query("select public.deliver_order($1, 'pix', null, $2)", [o1, randomUUID()])),
+    ).rejects.toThrow(/não permite entregar/);
+    const req = randomUUID();
+    const d = await as(atend, () =>
+      one<{ r: { rest_cents: number } }>("select public.deliver_order($1, 'dinheiro', null, $2) as r", [o1, req]),
+    );
+    expect(Number(d.r.rest_cents)).toBe(30000);
+    expect(
+      (
+        await as(atend, () =>
+          one<{ r: { duplicate: boolean } }>("select public.deliver_order($1, 'dinheiro', null, $2) as r", [o1, req]),
+        )
+      ).r.duplicate,
+    ).toBe(true);
+    await expect(as(atend, () => db.query("select public.move_order($1, 'producao')", [o1]))).rejects.toThrow(
+      /já foi entregue/,
+    );
+
+    const o2 = (await open(atend, { items: items(null, 1, 40000) })).r.id;
+    const plan = JSON.stringify([
+      { number: 1, amount_cents: 20000, due_date: "2026-12-10" },
+      { number: 2, amount_cents: 20000, due_date: "2027-01-10" },
+    ]);
+    await as(fin, () => db.query("select public.deliver_order($1, null, $2::jsonb, $3)", [o2, plan, randomUUID()]));
+    expect((await rows("select id from accounts where order_id = $1", [o2])).length).toBe(2);
+
+    const before = await stock(frame);
+    const o3 = (await open(atend, { items: items(frame, 1), down: 5000, method: "pix" })).r.id;
+    expect(await stock(frame)).toBe(before - 1);
+    await as(atend, () =>
+      db.query("select public.cancel_order($1, 'Cliente desistiu', true, 'pix', $2)", [o3, randomUUID()]),
+    );
+    expect(await stock(frame)).toBe(before);
+    const refund = await one<{ kind: string; origin: string; amount_cents: number }>(
+      "select kind, origin, amount_cents from accounts where order_id = $1 and kind = 'pagar'",
+      [o3],
+    );
+    expect([refund.kind, refund.origin, Number(refund.amount_cents)]).toEqual(["pagar", "devolucao", 5000]);
+    // o caixa confere: sinais e restante em dinheiro/pix, menos a devolução
+    const close = await as(fin, () =>
+      one<{ r: { expected_cents: number } }>("select public.close_cash($1, 0, 'conferência') as r", [session]),
+    );
+    expect(Number(close.r.expected_cents)).toBe(10000 + 30000); // só o que entrou em dinheiro
+  });
+});

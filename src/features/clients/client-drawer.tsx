@@ -12,6 +12,8 @@ import { ClientClinicalNotes } from "@/features/clients/client-clinical-notes";
 import { ClientItems } from "@/features/clients/client-items";
 import { ClientRecurring } from "@/features/clients/client-recurring";
 import { ClientWorkOrders } from "@/features/clients/client-work-orders";
+import { ClientOrders, ClientPrescriptions } from "@/features/clients/client-orders";
+import { useOrders } from "@/state/use-orders";
 import { useWorkshop } from "@/state/use-workshop";
 import { ClientNextAction } from "@/features/clients/client-next-action";
 import { ClientProposalsList } from "@/features/clients/client-proposals-list";
@@ -68,6 +70,7 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
   const itemKind = itemKindFor(data.company);
   const ag = useAgenda();
   const ws = useWorkshop();
+  const od = useOrders();
   const showNotes = moduleAvailable(data.company, "prontuario") && canDo("prontuario.escrever");
   const hasUpcoming = data.appointments.some(
     (a) => a.clientId === clientId && isOpenStatus(a.status) && dayOf(a) >= today,
@@ -257,6 +260,8 @@ function ClientDrawerBody({ clientId, focusDeal }: { clientId: string; focusDeal
       {itemKind && <ClientItems clientId={clientId} kind={itemKind} editable={editable} />}
       {ag.enabled && <ClientAppointments clientId={clientId} />}
       {ws.enabled && <ClientWorkOrders clientId={clientId} />}
+      {od.readsRx && <ClientPrescriptions clientId={clientId} />}
+      {od.enabled && <ClientOrders clientId={clientId} />}
       <ClientRecurring clientId={clientId} />
       {showNotes && <ClientClinicalNotes clientId={clientId} />}
       <ClientNextAction nextAction={nextAction} tasks={tasks} hasOpenDeals={openDeals.length > 0} />

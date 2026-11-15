@@ -27,6 +27,11 @@ export type DialogSpec =
   | { kind: "stockAdjust"; productId: string }
   | { kind: "counterReturn"; saleId?: string }
   | { kind: "creditLimit"; clientId?: string }
+  | { kind: "orderNew"; clientId?: string }
+  | { kind: "orderEdit"; orderId: string }
+  | { kind: "orderDeliver"; orderId: string }
+  | { kind: "orderCancel"; orderId: string }
+  | { kind: "prescription"; clientId: string }
   | { kind: "package"; clientId?: string }
   | { kind: "subscription"; clientId?: string; subscriptionId?: string }
   | { kind: "service"; serviceId?: string }

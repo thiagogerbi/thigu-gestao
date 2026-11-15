@@ -15,6 +15,7 @@ export type Plan = "essencial" | "equipe" | "empresa";
 /** Módulos que podem ser ligados por ramo e plano (além da base: clientes, tarefas e financeiro). */
 export type ModuleId =
   | "itens"
+  | "receita"
   | "agenda"
   | "servicos"
   | "prontuario"
@@ -195,7 +196,76 @@ export interface StockMovement {
   quantity: number;
   unitCostCents: number | null;
   saleId: string | null;
+  /** Pedido com prazo que tirou (ou devolveu) o produto do estoque. */
+  orderId?: string | null;
   reason: string;
+  createdBy: string;
+  createdAt: ISODateTime;
+}
+
+// ---------------------------------------------------------------- Pedidos com prazo e receita de óculos
+
+export type OrderStage = "recebido" | "producao" | "terceiro" | "pronto" | "entregue" | "cancelado";
+
+export interface Order {
+  id: string;
+  number: number;
+  clientId: string;
+  /** Técnico responsável (uma "agenda" de quem atende). */
+  resourceId: string | null;
+  prescriptionId: string | null;
+  title: string;
+  details: string;
+  stage: OrderStage;
+  promisedOn: ISODate;
+  totalCents: number;
+  /** Sinal pago na hora. */
+  downCents: number;
+  readyAt: ISODateTime | null;
+  deliveredAt: ISODateTime | null;
+  canceledAt: ISODateTime | null;
+  cancelReason: string | null;
+  createdBy: string;
+  createdAt: ISODateTime;
+}
+
+export interface OrderItem {
+  id: string;
+  orderId: string;
+  productId: string | null;
+  description: string;
+  quantity: number;
+  unitCents: number;
+}
+
+export interface OrderEvent {
+  id: string;
+  orderId: string;
+  description: string;
+  actorId: string | null;
+  createdAt: ISODateTime;
+}
+
+/** Valores de um olho: esférico, cilíndrico, eixo e adição (null = não informado). */
+export interface EyeValues {
+  sph: number | null;
+  cyl: number | null;
+  axis: number | null;
+  add: number | null;
+}
+
+/** Receita de óculos (dado de saúde): não se corrige, lança-se uma nova. */
+export interface Prescription {
+  id: string;
+  clientId: string;
+  examinedOn: ISODate;
+  validUntil: ISODate;
+  doctor: string;
+  od: EyeValues;
+  oe: EyeValues;
+  dnpOd: number | null;
+  dnpOe: number | null;
+  notes: string;
   createdBy: string;
   createdAt: ISODateTime;
 }
@@ -443,7 +513,8 @@ export type AccountOrigin =
   | "comissao"
   | "os"
   | "crediario"
-  | "devolucao";
+  | "devolucao"
+  | "pedido";
 
 export interface Account {
   id: string;
@@ -471,6 +542,8 @@ export interface Account {
   workOrderId?: string | null;
   /** Venda do balcão (à vista, parcela do crediário ou devolução). */
   counterSaleId?: string | null;
+  /** Sinal ou restante de um pedido com prazo. */
+  orderId?: string | null;
 }
 
 // ---------------------------------------------------------------- Oficina (ordem de serviço)
@@ -628,6 +701,10 @@ export interface CompanyData {
   workOrderPhotos: WorkOrderPhoto[];
   stockMovements: StockMovement[];
   counterSales: CounterSale[];
+  orders: Order[];
+  orderItems: OrderItem[];
+  orderEvents: OrderEvent[];
+  prescriptions: Prescription[];
   deals: Deal[];
   tasks: Task[];
   notes: Note[];

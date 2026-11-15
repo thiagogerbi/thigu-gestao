@@ -14,6 +14,13 @@ import { EnrollDialog } from "@/features/classes/enroll-dialog";
 import { CommissionRuleDialog } from "@/features/commissions/commission-rule-dialog";
 import { ProductDialog } from "@/features/services/product-dialog";
 import { ReturnDialog } from "@/features/stock/return-dialog";
+import {
+  OrderCancelDialog,
+  OrderDeliverDialog,
+  OrderEditDialog,
+  OrderNewDialog,
+  PrescriptionDialog,
+} from "@/features/orders/order-dialogs";
 import { CreditLimitDialog, StockAdjustDialog, StockEntryDialog } from "@/features/stock/stock-dialogs";
 import {
   VehicleTransferDialog,
@@ -99,6 +106,16 @@ function renderDialog(spec: DialogSpec, props: DialogProps) {
       return <ReturnDialog {...props} saleId={spec.saleId} />;
     case "creditLimit":
       return <CreditLimitDialog {...props} clientId={spec.clientId} />;
+    case "orderNew":
+      return <OrderNewDialog {...props} clientId={spec.clientId} />;
+    case "orderEdit":
+      return <OrderEditDialog {...props} orderId={spec.orderId} />;
+    case "orderDeliver":
+      return <OrderDeliverDialog {...props} orderId={spec.orderId} />;
+    case "orderCancel":
+      return <OrderCancelDialog {...props} orderId={spec.orderId} />;
+    case "prescription":
+      return <PrescriptionDialog {...props} clientId={spec.clientId} />;
     case "package":
       return <PackageDialog {...props} clientId={spec.clientId} />;
     case "subscription":

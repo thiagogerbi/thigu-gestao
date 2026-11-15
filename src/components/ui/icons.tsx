@@ -222,6 +222,14 @@ export const IconCard = ({ className }: P) =>
     </>,
     className,
   );
+export const IconClipboard = ({ className }: P) =>
+  base(
+    <>
+      <rect x="5" y="4" width="14" height="17" rx="2" />
+      <path d="M9 4h6v3H9zM9 12h6M9 16h4" />
+    </>,
+    className,
+  );
 export const IconSpinner = ({ className = "h-4 w-4" }: P) => (
   <svg viewBox="0 0 24 24" className={`${className} animate-spin`} aria-hidden="true" focusable="false">
     <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity=".25" strokeWidth="3" fill="none" />

@@ -16,7 +16,7 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
   const on = (m: Parameters<typeof moduleEnabled>[1]) => moduleEnabled(data.company, m);
 
   // Agenda: quem marca para todos vê tudo; o profissional, só as agendas ligadas a ele.
-  const resources = on("agenda") || on("ordem_servico") ? data.resources : [];
+  const resources = on("agenda") || on("ordem_servico") || on("pedidos") ? data.resources : [];
   const myResources = new Set(resources.filter((r) => r.userId === me).map((r) => r.id));
   const appointments = !on("agenda")
     ? []
@@ -48,6 +48,13 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
       ? data.workOrders
       : data.workOrders.filter((w) => w.resourceId !== null && myResources.has(w.resourceId));
   const woIds = new Set(workOrders.map((w) => w.id));
+  // Pedidos: atendimento e financeiro veem todos; o técnico, só os dele.
+  const orders = !on("pedidos")
+    ? []
+    : can(roles, "pedidos.ver_todos")
+      ? data.orders
+      : data.orders.filter((o) => o.resourceId !== null && myResources.has(o.resourceId));
+  const orderIds = new Set(orders.map((o) => o.id));
 
   const deals = allCrm ? data.deals : data.deals.filter((d) => d.ownerId === me);
   const dealIds = new Set(deals.map((d) => d.id));
@@ -60,7 +67,8 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
           // quem atende um paciente de um colega precisa ver o nome dele na própria agenda
           appointments.some((a) => a.clientId === c.id) ||
           myStudents.has(c.id) ||
-          workOrders.some((w) => w.clientId === c.id),
+          workOrders.some((w) => w.clientId === c.id) ||
+          orders.some((o) => o.clientId === c.id),
       );
   const clientIds = new Set(clients.map((c) => c.id));
 
@@ -71,7 +79,8 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
   const accounts = data.accounts.filter((a) => {
     if (allFin) return true;
     if (a.kind === "pagar") return false;
-    if (collects && ["atendimento", "pacote", "mensalidade", "caixa", "crediario"].includes(a.origin)) return true;
+    if (collects && ["atendimento", "pacote", "mensalidade", "caixa", "crediario", "pedido"].includes(a.origin))
+      return true;
     return can(roles, "recebiveis.ver_proprios") && a.saleId !== null && saleIds.has(a.saleId);
   });
   const accountIds = new Set(accounts.map((a) => a.id));
@@ -111,6 +120,12 @@ export function visibleData(data: CompanyData, viewer: Member): CompanyData {
       : [],
     stockMovements: on("estoque") ? data.stockMovements : [],
     counterSales: can(roles, "caixa.operar") || allFin ? data.counterSales : [],
+    orders,
+    orderItems: data.orderItems.filter((i) => orderIds.has(i.orderId)),
+    orderEvents: data.orderEvents.filter((e) => orderIds.has(e.orderId)),
+    // receita de óculos é dado de saúde: só quem atende lê (nem o caixa nem o financeiro)
+    prescriptions:
+      on("receita") && can(roles, "receita.usar") ? data.prescriptions.filter((p) => clientIds.has(p.clientId)) : [],
     workOrders,
     workOrderItems: data.workOrderItems.filter((i) => woIds.has(i.workOrderId)),
     workOrderEvents: data.workOrderEvents.filter((e) => woIds.has(e.workOrderId)),

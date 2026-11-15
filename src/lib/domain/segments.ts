@@ -42,7 +42,8 @@ export const MODULES: Record<ModuleId, ModuleInfo> = {
   caixa: { label: "Caixa do dia", minPlan: "essencial", built: true },
   ordem_servico: { label: "Ordem de serviço", minPlan: "essencial", built: true },
   estoque: { label: "Estoque, balcão e crediário", minPlan: "essencial", built: true },
-  pedidos: { label: "Pedidos com prazo", minPlan: "essencial", built: false },
+  pedidos: { label: "Pedidos com prazo", minPlan: "essencial", built: true },
+  receita: { label: "Receita de óculos", minPlan: "essencial", built: true },
   comissoes: { label: "Comissões", minPlan: "equipe", built: true },
   agendamento_online: { label: "Agendamento online", minPlan: "equipe", built: true },
   lembrete_automatico: { label: "Lembrete automático", minPlan: "equipe", built: false },
@@ -191,7 +192,7 @@ export const SEGMENTS: Record<Segment, SegmentInfo> = {
   pedidos: {
     label: "Pedidos com prazo de entrega",
     examples: "Ótica, costura, lavanderia, gráfica",
-    modules: ["pedidos", "lembretes", "caixa", "estoque"],
+    modules: ["pedidos", "receita", "lembretes", "caixa", "estoque"],
     client: ["cliente", "clientes"],
     roles: ["admin", "recepcao", "profissional", "financeiro"],
     roleLabels: { recepcao: "Atendente", profissional: "Técnico" },

@@ -36,6 +36,7 @@ import { STAGE_LABEL, type Appointment, type AppointmentStatus, type Role, type 
 import { isPlate, normalizePlate } from "@/lib/domain/work-orders";
 import { executeWorkOrder } from "@/lib/server/execute-work-orders";
 import { executeStock } from "@/lib/server/execute-stock";
+import { executeOrder } from "@/lib/server/execute-orders";
 import type { ServerSupabase } from "@/lib/supabase/server";
 import "server-only";
 
@@ -247,6 +248,18 @@ export async function executeAction(ctx: ExecContext, a: Action): Promise<Action
       if (a.type === "client.setCreditLimit" && !need("crediario.limite"))
         return fail("Somente o financeiro ou o dono definem o limite de crediário.");
       return executeStock(ctx, a, dbFail);
+    }
+
+    case "order.open":
+    case "order.save":
+    case "order.move":
+    case "order.deliver":
+    case "order.cancel":
+    case "prescription.save": {
+      const flags = await companyFlags();
+      const mod = a.type === "prescription.save" ? "receita" : "pedidos";
+      if (!flags || !moduleEnabled(flags, mod)) return fail(MODULE_OFF);
+      return executeOrder(ctx, a, dbFail);
     }
 
     case "item.setActive": {

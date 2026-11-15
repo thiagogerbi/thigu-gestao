@@ -241,6 +241,77 @@ export const actionSchema = z.discriminatedUnion("type", [
     requestId: z.string().uuid(),
   }),
   z.object({ type: z.literal("client.setCreditLimit"), clientId: id, limitCents: cents.nullable() }),
+  z.object({
+    type: z.literal("order.open"),
+    clientId: id,
+    title: text(120).min(1, "Diga o que será feito."),
+    details: text(1000),
+    promisedOn: date,
+    resourceId: id.nullable(),
+    prescriptionId: id.nullable(),
+    items: z
+      .array(
+        z.object({
+          productId: id.nullable(),
+          description: text(120).min(1, "Descreva o item."),
+          quantity: z.number().int().min(1).max(999),
+          unitCents: cents,
+        }),
+      )
+      .min(1, "Adicione pelo menos um item.")
+      .max(30),
+    downCents: cents,
+    method: methodSchema.nullable(),
+    requestId: z.string().uuid(),
+  }),
+  z.object({
+    type: z.literal("order.save"),
+    id,
+    title: text(120).min(1, "Diga o que será feito."),
+    details: text(1000),
+    promisedOn: date,
+    resourceId: id.nullable(),
+  }),
+  z.object({ type: z.literal("order.move"), id, stage: z.enum(["recebido", "producao", "terceiro", "pronto"]) }),
+  z.object({
+    type: z.literal("order.deliver"),
+    id,
+    method: methodSchema.nullable(),
+    plan: z
+      .array(z.object({ number: z.number().int().min(1).max(36), amountCents: positiveCents, dueDate: date }))
+      .max(12),
+    requestId: z.string().uuid(),
+  }),
+  z.object({
+    type: z.literal("order.cancel"),
+    id,
+    reason: text(300).min(3, "Escreva o motivo do cancelamento."),
+    refund: z.boolean(),
+    method: methodSchema.nullable(),
+    requestId: z.string().uuid(),
+  }),
+  z.object({
+    type: z.literal("prescription.save"),
+    clientId: id,
+    examinedOn: date,
+    validUntil: date,
+    doctor: text(120),
+    od: z.object({
+      sph: z.number().min(-30).max(30).nullable(),
+      cyl: z.number().min(-15).max(15).nullable(),
+      axis: z.number().int().min(0).max(180).nullable(),
+      add: z.number().min(0).max(5).nullable(),
+    }),
+    oe: z.object({
+      sph: z.number().min(-30).max(30).nullable(),
+      cyl: z.number().min(-15).max(15).nullable(),
+      axis: z.number().int().min(0).max(180).nullable(),
+      add: z.number().min(0).max(5).nullable(),
+    }),
+    dnpOd: z.number().min(20).max(45).nullable(),
+    dnpOe: z.number().min(20).max(45).nullable(),
+    notes: text(500),
+  }),
   z.object({ type: z.literal("cash.open"), openingCents: z.number().int().min(0).max(1_000_000_00) }),
   z.object({
     type: z.literal("cash.sale"),

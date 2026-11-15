@@ -40,7 +40,11 @@ export type Capability =
   | "os.entregar" // entregar o veículo e gerar a cobrança
   | "estoque.movimentar" // dar entrada de mercadoria, ajustar e registrar perdas
   | "balcao.desconto_livre" // desconto acima de 10% na venda do balcão
-  | "crediario.limite"; // definir o limite de crediário de cada cliente
+  | "crediario.limite" // definir o limite de crediário de cada cliente
+  | "pedidos.ver_todos" // ver todos os pedidos (o técnico vê os dele)
+  | "pedidos.editar" // abrir, alterar, mover e cancelar pedidos
+  | "pedidos.entregar" // entregar e cobrar o restante
+  | "receita.usar"; // ler e lançar receitas de óculos (dado de saúde)
 
 const ALL_CLIENTS: Capability[] = ["clientes.ver_todos", "clientes.editar_todos", "clientes.editar_proprios"];
 
@@ -74,6 +78,10 @@ const MATRIX: Record<Role, Capability[]> = {
     "estoque.movimentar",
     "balcao.desconto_livre",
     "crediario.limite",
+    "pedidos.ver_todos",
+    "pedidos.editar",
+    "pedidos.entregar",
+    "receita.usar",
   ],
   gestor: [
     ...ALL_CLIENTS,
@@ -95,6 +103,9 @@ const MATRIX: Record<Role, Capability[]> = {
     "os.entregar",
     "estoque.movimentar",
     "balcao.desconto_livre",
+    "pedidos.ver_todos",
+    "pedidos.editar",
+    "pedidos.entregar",
   ],
   vendedor: [
     "clientes.editar_proprios",
@@ -118,6 +129,8 @@ const MATRIX: Record<Role, Capability[]> = {
     "os.entregar",
     "estoque.movimentar",
     "crediario.limite",
+    "pedidos.ver_todos",
+    "pedidos.entregar",
   ],
   // Papéis dos ramos com atendimento. O caixa do dia entra com o próximo módulo.
   recepcao: [
@@ -129,9 +142,13 @@ const MATRIX: Record<Role, Capability[]> = {
     "os.ver_todas",
     "os.editar",
     "os.entregar",
+    "pedidos.ver_todos",
+    "pedidos.editar",
+    "pedidos.entregar",
+    "receita.usar",
   ],
   // o administrador não lê o prontuário dos outros: quem atende e também é dono acumula "profissional"
-  profissional: ["clientes.editar_proprios", "agenda.propria", "prontuario.escrever"],
+  profissional: ["clientes.editar_proprios", "agenda.propria", "prontuario.escrever", "receita.usar"],
   caixa: [...ALL_CLIENTS, "caixa.operar"],
 };
 

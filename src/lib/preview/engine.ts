@@ -53,6 +53,7 @@ import { visibleData } from "@/lib/domain/visibility";
 import { isPlate, normalizePlate } from "@/lib/domain/work-orders";
 import { runWorkOrder } from "@/lib/preview/engine-work-orders";
 import { runStock } from "@/lib/preview/engine-stock";
+import { runOrder } from "@/lib/preview/engine-orders";
 
 export interface EngineContext {
   now: Date;
@@ -243,6 +244,14 @@ function run(d: CompanyData, actor: Member, a: Action, ctx: EngineContext): Acti
     case "counter.return":
     case "client.setCreditLimit":
       return runStock(d, actor, a, { nowIso, today, newId: ctx.newId, visible, log, clientWord: t.Cliente });
+
+    case "order.open":
+    case "order.save":
+    case "order.move":
+    case "order.deliver":
+    case "order.cancel":
+    case "prescription.save":
+      return runOrder(d, actor, a, { nowIso, today, newId: ctx.newId, visible, log });
 
     case "item.setActive": {
       const item = d.items.find((i) => i.id === a.id);

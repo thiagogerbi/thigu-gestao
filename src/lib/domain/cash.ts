@@ -35,4 +35,4 @@ export const openSession = (sessions: readonly CashSession[]) => sessions.find((
 export const MAX_SALE_ITEMS = 30;
 
 /** Contas que o balcão costuma cobrar: atendimentos, pacotes, mensalidades e vendas do próprio caixa (igual ao banco). */
-export const COUNTER_ORIGINS = ["atendimento", "pacote", "mensalidade", "caixa", "crediario"] as const;
+export const COUNTER_ORIGINS = ["atendimento", "pacote", "mensalidade", "caixa", "crediario", "pedido"] as const;
