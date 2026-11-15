@@ -66,6 +66,12 @@ beforeAll(async () => {
     create table auth.users (id uuid primary key, email text, raw_user_meta_data jsonb default '{}', email_confirmed_at timestamptz default now());
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
     grant usage on schema auth to authenticated;
+    -- No Supabase, tudo o que nasce no schema public vem aberto para anon e authenticated.
+    -- O teste imita isso para as migrações serem testadas no mesmo ponto de partida do banco real.
+    grant usage on schema public to anon, authenticated;
+    alter default privileges in schema public grant all on tables to anon, authenticated;
+    alter default privileges in schema public grant all on sequences to anon, authenticated;
+    alter default privileges in schema public grant execute on functions to anon, authenticated;
   `);
   const dir = path.resolve(__dirname, "../supabase/migrations");
   for (const f of readdirSync(dir)
@@ -2525,5 +2531,79 @@ describe("permissões das funções", () => {
        where n.nspname = 'public' and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search_path=%')`,
     );
     expect(loose).toEqual([]);
+  });
+});
+
+describe("permissões das tabelas", () => {
+  const privs = (grantee: string, priv: string) =>
+    rows<{ t: string }>(
+      `select table_name as t from information_schema.role_table_grants
+       where table_schema = 'public' and grantee = $1 and privilege_type = $2 order by 1`,
+      [grantee, priv],
+    ).then((r) => r.map((x) => x.t));
+
+  it("visitante não toca em tabela; quem entrou só tem o que as migrações concedem", async () => {
+    expect(
+      await rows(
+        "select 1 from information_schema.role_table_grants where table_schema = 'public' and grantee = 'anon'",
+      ),
+    ).toEqual([]);
+    expect(
+      await rows(
+        "select 1 from information_schema.column_privileges where table_schema = 'public' and grantee = 'anon'",
+      ),
+    ).toEqual([]);
+    for (const p of ["TRUNCATE", "REFERENCES", "TRIGGER"]) expect(await privs("authenticated", p)).toEqual([]);
+    expect(await privs("authenticated", "UPDATE")).toEqual(["accounts", "activities", "deals", "notes", "tasks"]);
+    expect(await privs("authenticated", "DELETE")).toEqual(["attendance", "commission_rules", "resource_blocks"]);
+    // toda tabela é lida por quem entrou (as políticas filtram as linhas)
+    expect((await privs("authenticated", "SELECT")).length).toBe(
+      (await rows("select 1 from pg_tables where schemaname = 'public'")).length,
+    );
+  });
+
+  it("saldo do estoque e limite do crediário não mudam por fora das funções, nem pelo dono", async () => {
+    const C = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Loja', 'balcao') as id"))).id;
+    const prod = await as(U.ana, () =>
+      one<{ id: string }>(
+        "insert into products (company_id, name, price_cents) values ($1, 'Camisa', 5000) returning id",
+        [C],
+      ),
+    );
+    const cli = await as(U.ana, () =>
+      one<{ id: string }>("insert into clients (company_id, name, owner_id) values ($1, 'Davi', $2) returning id", [
+        C,
+        U.ana,
+      ]),
+    );
+    await expect(
+      as(U.ana, () => db.query("update products set stock_qty = 99 where id = $1", [prod.id])),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      as(U.ana, () =>
+        db.query("insert into products (company_id, name, price_cents, stock_qty) values ($1, 'Calça', 9000, 50)", [C]),
+      ),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      as(U.ana, () => db.query("update clients set credit_limit_cents = 100000 where id = $1", [cli.id])),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      as(U.ana, () =>
+        db.query(
+          "insert into clients (company_id, name, owner_id, credit_limit_cents) values ($1, 'Eva', $2, 100000)",
+          [C, U.ana],
+        ),
+      ),
+    ).rejects.toThrow(/permission denied/);
+    // pelo caminho certo continua funcionando
+    await as(U.ana, () => db.query("select public.stock_entry($1, 3, 2000, '')", [prod.id]));
+    await as(U.ana, () => db.query("select public.set_credit_limit($1, 100000)", [cli.id]));
+    await as(U.ana, () => db.query("update clients set name = 'Davi Lima' where id = $1", [cli.id]));
+    expect(
+      await one(
+        "select p.stock_qty, c.credit_limit_cents, c.name from products p, clients c where p.id = $1 and c.id = $2",
+        [prod.id, cli.id],
+      ),
+    ).toMatchObject({ stock_qty: 3, name: "Davi Lima" });
   });
 });
