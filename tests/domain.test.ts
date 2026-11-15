@@ -1,7 +1,7 @@
 import { accountStatus, balanceCents, validateSettlement } from "@/lib/domain/accounts";
 import { addMonths, formatDateBR } from "@/lib/domain/dates";
 import { buildPlan, checkPlan, splitEvenly } from "@/lib/domain/installments";
-import { formatBRL, parseBRLToCents } from "@/lib/domain/money";
+import { formatBRL, formatBRLCompact, parseBRLToCents } from "@/lib/domain/money";
 import {
   brandCss,
   brandPalette,
@@ -18,6 +18,7 @@ import {
 } from "@/lib/domain/branding";
 import { formatDocument, isValidCNPJ, isValidCPF, isValidDocument, normalizeDocument } from "@/lib/domain/document";
 import { can } from "@/lib/domain/permissions";
+import { telUrl, whatsappUrl } from "@/lib/domain/phone";
 import { hasProposalErrors, proposalTotalCents, validateProposal } from "@/lib/domain/proposals";
 import type { Account, Movement } from "@/lib/domain/types";
 import { describe, expect, it } from "vitest";
@@ -27,6 +28,12 @@ describe("dinheiro", () => {
     expect(formatBRL(150000)).toBe("R$ 1.500,00");
     expect(formatBRL(20000)).toBe("R$ 200,00");
     expect(formatBRL(5)).toBe("R$ 0,05");
+    // rótulos de gráfico
+    expect(formatBRLCompact(150000)).toBe("R$ 1,5 mil");
+    expect(formatBRLCompact(80000)).toBe("R$ 800");
+    expect(formatBRLCompact(61010)).toBe("R$ 610");
+    expect(formatBRLCompact(-63990)).toBe("-R$ 640");
+    expect(formatBRLCompact(-250000)).toBe("-R$ 2,5 mil");
   });
   it("interpreta o que a pessoa digita sem ponto flutuante", () => {
     expect(parseBRLToCents("200")).toBe(20000);
@@ -220,5 +227,20 @@ describe("CPF e CNPJ", () => {
     expect(normalizeDocument("12.abc.345/01de-35")).toBe("12ABC34501DE35");
     expect(formatDocument("12ABC34501DE35")).toBe("12.ABC.345/01DE-35");
     expect(formatDocument("52998224725")).toBe("529.982.247-25");
+  });
+});
+
+describe("telefone", () => {
+  it("monta o link do WhatsApp com 55 + DDD + número", () => {
+    expect(whatsappUrl("(11) 90000-1002")).toBe("https://wa.me/5511900001002");
+    expect(whatsappUrl("11 3333-4444")).toBe("https://wa.me/551133334444");
+    expect(whatsappUrl("+55 (11) 90000-1002")).toBe("https://wa.me/5511900001002");
+    expect(whatsappUrl("011 90000-1002")).toBe("https://wa.me/5511900001002");
+  });
+  it("sem DDD não há link do WhatsApp, mas ainda dá para ligar", () => {
+    expect(whatsappUrl("90000-1002")).toBeNull();
+    expect(whatsappUrl("")).toBeNull();
+    expect(telUrl("90000-1002")).toBe("tel:900001002");
+    expect(telUrl("ramal 12")).toBeNull();
   });
 });

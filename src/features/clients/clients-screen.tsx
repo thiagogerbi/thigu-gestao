@@ -8,8 +8,11 @@ import { IconPlus, IconSearch } from "@/components/ui/icons";
 import { relativeDayLabel } from "@/lib/domain/dates";
 import { isOpenStage } from "@/lib/domain/deals";
 import { formatBRL } from "@/lib/domain/money";
+import { usesCrm } from "@/lib/domain/permissions";
+import { ITEM_KINDS, itemKindFor } from "@/lib/domain/segments";
 import { useBackend, useCan, useMemberName } from "@/state/backend-context";
 import { useNav } from "@/state/use-nav";
+import { useTerms } from "@/state/use-terms";
 import { useState } from "react";
 
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -20,6 +23,9 @@ export function ClientsScreen() {
   const name = useMemberName();
   const nav = useNav();
   const dialogs = useDialogs();
+  const t = useTerms();
+  // recepção, profissional e caixa não trabalham com negociações: a lista não fala delas
+  const showDeals = usesCrm(me.roles);
   const [q, setQ] = useState(nav.params.get("busca") ?? "");
   const owner = nav.params.get("responsavel") ?? "";
   const term = norm(q.trim());
@@ -32,6 +38,7 @@ export function ClientsScreen() {
         !term ||
         norm(c.name).includes(term) ||
         norm(c.email).includes(term) ||
+        data.items.some((i) => i.clientId === c.id && i.active && norm(i.name).includes(term)) ||
         (digits.length >= 3 && c.phone.replace(/\D/g, "").includes(digits)),
     )
     .map((c) => {
@@ -42,16 +49,27 @@ export function ClientsScreen() {
       return { c, open, next, pipeline: open.reduce((s, d) => s + d.valueCents, 0) };
     })
     .sort((a, b) => a.c.name.localeCompare(b.c.name, "pt-BR"));
+  // nos ramos com pets, o nome deles aparece no cartão do tutor (e a busca também encontra por eles)
+  const itemKind = itemKindFor(data.company);
+  const petNames = (clientId: string) =>
+    data.items
+      .filter((i) => i.clientId === clientId && i.active)
+      .map((i) => i.name)
+      .join(", ");
 
   return (
     <>
       <PageHeader
-        title="Clientes"
-        description="Pessoas e empresas com quem você conversa. Clique em um cliente para ver tudo sobre ele."
+        title={t.Clientes}
+        description={
+          data.company.segment === "geral"
+            ? "Pessoas e empresas com quem você conversa. Clique em um cliente para ver tudo sobre ele."
+            : `Clique em um ${t.cliente} para ver tudo sobre ele.`
+        }
         actions={
-          canDo("crm.editar_proprios") && (
+          canDo("clientes.editar_proprios") && (
             <Button onClick={() => dialogs.open({ kind: "client" })}>
-              <IconPlus className="h-5 w-5" /> Novo cliente
+              <IconPlus className="h-5 w-5" /> Novo {t.cliente}
             </Button>
           )
         }
@@ -60,19 +78,19 @@ export function ClientsScreen() {
       <div className="mb-4 grid gap-3 sm:grid-cols-[1fr_240px]">
         <div className="relative">
           <TextField
-            label="Buscar cliente"
+            label={`Buscar ${t.cliente}`}
             type="search"
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
               nav.setQuery({ busca: e.target.value || null });
             }}
-            placeholder="Nome, e-mail ou telefone"
+            placeholder={itemKind ? "Nome, telefone ou nome do pet" : "Nome, e-mail ou telefone"}
             className="pl-10"
           />
           <IconSearch className="pointer-events-none absolute bottom-3 left-3 h-5 w-5 text-muted" />
         </div>
-        {canDo("crm.ver_todos") && (
+        {canDo("clientes.ver_todos") && (
           <label className="block">
             <span className="mb-1 block text-sm font-semibold">Responsável</span>
             <select
@@ -92,24 +110,26 @@ export function ClientsScreen() {
       </div>
 
       <p className="mb-2 text-sm text-muted" role="status">
-        {rows.length} {rows.length === 1 ? "cliente" : "clientes"}
+        {rows.length} {rows.length === 1 ? t.cliente : t.clientes}
         {q ? ` encontrados para “${q}”` : ""}
       </p>
 
       {data.clients.length === 0 ? (
         <EmptyState
-          title="Nenhum cliente ainda"
+          title={`Nenhum ${t.cliente} ainda`}
           action={
-            canDo("crm.editar_proprios") && (
-              <Button onClick={() => dialogs.open({ kind: "client" })}>Cadastrar primeiro cliente</Button>
+            canDo("clientes.editar_proprios") && (
+              <Button onClick={() => dialogs.open({ kind: "client" })}>Cadastrar primeiro {t.cliente}</Button>
             )
           }
         >
-          Comece cadastrando alguém com quem você já conversa. Só o nome é obrigatório.
+          {canDo("clientes.editar_proprios")
+            ? "Comece cadastrando alguém que você já atende. Só o nome é obrigatório."
+            : `Os ${t.clientes} sob sua responsabilidade aparecem aqui.`}
         </EmptyState>
       ) : rows.length === 0 ? (
         <EmptyState
-          title="Nenhum cliente encontrado"
+          title={`Nenhum ${t.cliente} encontrado`}
           action={
             <Button
               variant="secondary"
@@ -136,22 +156,35 @@ export function ClientsScreen() {
               >
                 <span className="flex w-full items-start justify-between gap-2">
                   <span className="font-display text-[17px] font-bold">{c.name}</span>
-                  {c.ownerId === me.userId && <Badge tone="blue">Seu cliente</Badge>}
+                  {c.ownerId === me.userId && <Badge tone="blue">Seu {t.cliente}</Badge>}
                 </span>
                 <span className="text-sm text-muted">
                   {[c.phone, c.email].filter(Boolean).join(" · ") || "Sem contato cadastrado"}
                 </span>
                 <span className="mt-2 text-sm">Responsável: {name(c.ownerId)}</span>
-                <span className="mt-1 text-sm">
-                  {open.length ? (
-                    <>
-                      {open.length} {open.length === 1 ? "negociação aberta" : "negociações abertas"} ·{" "}
-                      <span className="tabular">{formatBRL(pipeline)}</span>
-                    </>
-                  ) : (
-                    <span className="text-muted">Sem negociação aberta</span>
-                  )}
-                </span>
+                {showDeals && (
+                  <span className="mt-1 text-sm">
+                    {open.length ? (
+                      <>
+                        {open.length} {open.length === 1 ? "negociação aberta" : "negociações abertas"} ·{" "}
+                        <span className="tabular">{formatBRL(pipeline)}</span>
+                      </>
+                    ) : (
+                      <span className="text-muted">Sem negociação aberta</span>
+                    )}
+                  </span>
+                )}
+                {itemKind && (
+                  <span className="mt-1 text-sm">
+                    {petNames(c.id) ? (
+                      <>
+                        <span className="text-muted capitalize">{ITEM_KINDS[itemKind].noun[1]}:</span> {petNames(c.id)}
+                      </>
+                    ) : (
+                      <span className="text-muted">Nenhum {ITEM_KINDS[itemKind].noun[0]} cadastrado</span>
+                    )}
+                  </span>
+                )}
                 {next && (
                   <span
                     className={

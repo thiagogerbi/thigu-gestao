@@ -1,9 +1,10 @@
 import { ThiguLogo } from "@/components/brand/thigu-logo";
 import { AppShell } from "@/components/layout/app-shell";
 import { CreateCompanyForm } from "@/features/auth/create-company-form";
+import { PendingInvites } from "@/features/company/pending-invites";
 import { SignOutButton } from "@/features/auth/sign-out-button";
 import { COMPANY_COOKIE } from "@/lib/server/constants";
-import { loadCompanyData, loadMemberships } from "@/lib/server/load";
+import { loadCompanyData, loadMemberships, loadMyInvites } from "@/lib/server/load";
 import { supabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { RealBackend } from "@/state/real-backend";
@@ -49,11 +50,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const { data: auth } = await sb.auth.getUser();
   if (!auth.user) redirect("/entrar");
 
-  const memberships = await loadMemberships(sb, auth.user.id);
+  const [memberships, invites] = await Promise.all([loadMemberships(sb, auth.user.id), loadMyInvites(sb)]);
   if (memberships.length === 0) {
     return (
       <Centered>
-        <h1 className="text-xl font-bold">Vamos cadastrar sua empresa</h1>
+        <PendingInvites invites={invites} />
+        <h1 className="text-xl font-bold">
+          {invites.length > 0 ? "Ou cadastre a sua própria empresa" : "Vamos cadastrar sua empresa"}
+        </h1>
         <p className="mb-4 mt-1 text-muted">
           Use o código de ativação que chegou no seu e-mail depois da compra. Você será o administrador e poderá
           convidar sua equipe depois.
@@ -62,7 +66,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="mt-6 border-t border-line pt-4 text-sm text-muted">
           <p>
             Você entrou como <strong className="text-ink">{auth.user.email}</strong>. Se alguém da sua empresa já usa o
-            Thigu, peça para adicionar este e-mail em “Minha empresa” — aí não é preciso código.
+            Thigu, peça para convidar este e-mail em “Minha empresa”: o convite aparece aqui e não é preciso código.
           </p>
           <SignOutButton />
         </div>
@@ -85,7 +89,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       me={me}
       companies={memberships.map((m) => ({ id: m.companyId, name: m.companyName }))}
     >
-      <AppShell>{children}</AppShell>
+      <AppShell>
+        <PendingInvites invites={invites} />
+        {children}
+      </AppShell>
     </RealBackend>
   );
 }

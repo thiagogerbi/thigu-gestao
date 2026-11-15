@@ -5,6 +5,37 @@ import { createContext, useContext } from "react";
 /** Todas as janelas que podem ser abertas de qualquer tela, com seus parâmetros. */
 export type DialogSpec =
   | { kind: "client"; clientId?: string }
+  | { kind: "item"; clientId: string; itemId?: string }
+  | { kind: "appointment"; appointmentId?: string; clientId?: string; resourceId?: string; date?: string }
+  | { kind: "noShow"; appointmentId: string }
+  | { kind: "block"; resourceId?: string; date?: string }
+  | { kind: "product"; productId?: string }
+  | { kind: "cashSale" }
+  | { kind: "cashReceive"; accountId?: string }
+  | { kind: "cashClose" }
+  | { kind: "commissionRule"; ruleId?: string; resourceId?: string }
+  | { kind: "classGroup"; classId?: string }
+  | { kind: "enroll"; classId: string }
+  | { kind: "workOrderNew"; clientId?: string; itemId?: string }
+  | { kind: "workOrderEdit"; workOrderId: string }
+  | { kind: "woItem"; workOrderId: string; itemKind?: "peca" | "servico" }
+  | { kind: "woApprove"; workOrderId: string }
+  | { kind: "woDeliver"; workOrderId: string }
+  | { kind: "woCancel"; workOrderId: string }
+  | { kind: "vehicleTransfer"; itemId: string }
+  | { kind: "stockEntry"; productId?: string }
+  | { kind: "stockAdjust"; productId: string }
+  | { kind: "counterReturn"; saleId?: string }
+  | { kind: "creditLimit"; clientId?: string }
+  | { kind: "orderNew"; clientId?: string }
+  | { kind: "orderEdit"; orderId: string }
+  | { kind: "orderDeliver"; orderId: string }
+  | { kind: "orderCancel"; orderId: string }
+  | { kind: "prescription"; clientId: string }
+  | { kind: "package"; clientId?: string }
+  | { kind: "subscription"; clientId?: string; subscriptionId?: string }
+  | { kind: "service"; serviceId?: string }
+  | { kind: "resource"; resourceId?: string; userId?: string }
   | { kind: "deal"; dealId?: string; clientId?: string }
   | { kind: "task"; taskId?: string; clientId?: string; dealId?: string }
   | { kind: "lostDeal"; dealId: string }

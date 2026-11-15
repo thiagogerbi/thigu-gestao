@@ -38,12 +38,17 @@ function highlight(selector: string) {
   }, 150);
 }
 
-export function PreviewTour({ open, onClose }: { open: boolean; onClose: () => void }) {
+/**
+ * "auto": painel aberto em telas grandes e nada no celular, onde ele cobriria a tela inteira
+ * (lá o guia abre pelo botão "Guia" do aviso da prévia);
+ * "open": painel aberto; "mini": só o botão; "closed": nada.
+ */
+export type TourMode = "auto" | "open" | "mini" | "closed";
+
+export function PreviewTour({ mode, onMode }: { mode: TourMode; onMode: (mode: TourMode) => void }) {
   const { data, preview, me, today, basePath } = useBackend();
   const nav = useNav();
   const [seen, setSeen] = useState<Record<string, boolean>>({});
-  // depois de "Me mostre" o painel vira um botão pequeno, para não cobrir o que foi destacado
-  const [collapsed, setCollapsed] = useState(false);
   if (!preview) return null;
 
   // compara pela data local (o horário é guardado em UTC, que à noite já é o dia seguinte)
@@ -104,30 +109,35 @@ export function PreviewTour({ open, onClose }: { open: boolean; onClose: () => v
     const owner = preview!.personas.find((p) => p.roles.includes("admin"));
     if (owner && owner.userId !== me.userId) preview!.setPersona(owner.userId);
     setSeen((s) => ({ ...s, [step.id]: true }));
-    setCollapsed(true);
+    // depois de "Me mostre" o painel vira um botão pequeno, para não cobrir o que foi destacado
+    onMode("mini");
     nav.router.push(step.go, { scroll: false });
     highlight(step.highlight);
   }
 
-  if (!open) return null;
-  if (collapsed) {
-    return (
-      <button
-        type="button"
-        onClick={() => setCollapsed(false)}
-        className="fixed bottom-20 right-3 z-[55] flex min-h-12 items-center gap-2 rounded-full bg-navy px-4 font-semibold text-white shadow-xl hover:bg-navy-700 lg:bottom-6 lg:right-6 print:hidden"
-      >
-        <span className="rounded-full bg-money px-2 text-sm">
-          {doneCount}/{steps.length}
-        </span>
-        {doneCount === steps.length ? "Guia concluído" : "Continuar o guia"}
-      </button>
-    );
-  }
-  return (
+  if (mode === "closed") return null;
+  const pill = (
+    <button
+      type="button"
+      onClick={() => onMode("open")}
+      className="fixed bottom-[5.25rem] right-3 z-[55] flex min-h-12 items-center gap-2 rounded-full bg-navy px-4 font-semibold text-white shadow-raised hover:bg-navy-700 lg:bottom-6 lg:right-6 print:hidden"
+    >
+      <span className="rounded-full bg-money px-2 text-sm tabular">
+        {doneCount}/{steps.length}
+      </span>
+      {doneCount === steps.length ? "Guia concluído" : "Continuar o guia"}
+    </button>
+  );
+  if (mode === "mini") return pill;
+  const onClose = () => onMode("closed");
+  const panel = (
     <aside
       aria-label="Guia da prévia"
-      className="fixed bottom-20 right-3 z-[55] w-[min(380px,calc(100vw-24px))] rounded-2xl border border-line bg-white shadow-2xl lg:bottom-6 lg:right-6 print:hidden"
+      className={cx(
+        // text-ink: o painel é montado dentro do aviso da prévia e herdaria o texto marrom dele
+        "fixed bottom-[5.25rem] right-3 z-[55] w-[min(380px,calc(100vw-24px))] rounded-2xl border border-line bg-white text-ink shadow-raised lg:bottom-6 lg:right-6 print:hidden",
+        mode === "auto" && "hidden lg:block",
+      )}
     >
       <div className="flex items-start justify-between gap-2 border-b border-line px-4 py-3">
         <div>
@@ -142,7 +152,7 @@ export function PreviewTour({ open, onClose }: { open: boolean; onClose: () => v
           type="button"
           onClick={onClose}
           aria-label="Fechar guia"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-muted hover:bg-canvas"
+          className="-mr-1 -mt-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-canvas"
         >
           <IconX className="h-5 w-5" />
         </button>
@@ -181,10 +191,11 @@ export function PreviewTour({ open, onClose }: { open: boolean; onClose: () => v
       </ol>
       {doneCount === steps.length && (
         <p className="border-t border-line px-4 py-3 text-sm">
-          Você fez o caminho completo: conversa → proposta → venda → parcelas → dinheiro recebido. Use “Restaurar
-          exemplo” para recomeçar.
+          Você fez o caminho completo: conversa → proposta → venda → parcelas → dinheiro recebido. Use “Recomeçar
+          exemplo” para ver de novo.
         </p>
       )}
     </aside>
   );
+  return panel;
 }

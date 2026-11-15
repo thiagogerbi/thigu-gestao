@@ -1,6 +1,7 @@
 "use client";
 import { IconAlert, IconCheckCircle } from "@/components/ui/icons";
 import { cx } from "@/components/ui/styles";
+import { useEffect, useRef } from "react";
 
 export function Card({
   className,
@@ -9,10 +10,7 @@ export function Card({
   ...rest
 }: React.HTMLAttributes<HTMLElement> & { as?: "section" | "div" | "article" | "li" }) {
   return (
-    <As
-      className={cx("rounded-xl border border-line bg-white shadow-[0_1px_2px_rgba(20,45,78,0.04)]", className)}
-      {...rest}
-    >
+    <As className={cx("rounded-2xl border border-line bg-white shadow-card", className)} {...rest}>
       {children}
     </As>
   );
@@ -60,12 +58,13 @@ export function PageHeader({
   actions?: React.ReactNode;
 }) {
   return (
-    <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 className="text-2xl font-bold text-ink sm:text-[28px]">{title}</h1>
-        {description && <p className="mt-1 max-w-2xl text-muted">{description}</p>}
+        <h1 className="text-[26px] font-extrabold leading-tight text-ink sm:text-[30px]">{title}</h1>
+        {description && <p className="mt-1.5 max-w-2xl text-muted">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
+      {/* no celular a ação principal ocupa a largura toda: mais fácil de acertar com o polegar */}
+      {actions && <div className="flex flex-wrap gap-2 *:flex-1 sm:*:flex-none">{actions}</div>}
     </header>
   );
 }
@@ -103,8 +102,16 @@ export function InlineAlert({
     blue: "border-primary/25 bg-primary-50 text-primary-700",
     green: "border-[#bfe8d8] bg-money-50 text-money-700",
   };
+  // Erro de formulário aparece no topo; em janela comprida ele ficaria fora da tela
+  // e a pessoa clicaria em "Salvar" sem ver nada acontecer. Ao surgir, rola até ele.
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (tone === "red" && el?.closest("[role=dialog], form")) el.scrollIntoView({ block: "nearest" });
+  }, [tone]);
   return (
     <div
+      ref={ref}
       role={tone === "red" ? "alert" : "status"}
       className={cx("flex gap-2 rounded-lg border px-3 py-2.5 text-sm", map[tone])}
     >

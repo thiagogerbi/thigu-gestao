@@ -196,10 +196,13 @@ export function Drawer({
   subtitle,
   children,
   headerActions,
+  eyebrow = "Ficha do cliente",
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
+  /** Linha pequena acima do título. Cada ramo chama o cliente de um jeito ("Ficha do paciente"). */
+  eyebrow?: string;
   subtitle?: React.ReactNode;
   children: React.ReactNode;
   headerActions?: React.ReactNode;
@@ -222,7 +225,7 @@ export function Drawer({
       >
         <div className="flex items-start justify-between gap-3 border-b border-line bg-white px-5 py-4">
           <div className="min-w-0">
-            <p className="text-sm font-semibold uppercase tracking-wide text-muted">Ficha do cliente</p>
+            <p className="text-sm font-semibold uppercase tracking-wide text-muted">{eyebrow}</p>
             <h2 id={titleId} className="truncate text-xl font-bold">
               {title}
             </h2>
@@ -230,7 +233,7 @@ export function Drawer({
           </div>
           <div className="flex items-center gap-1">
             {headerActions}
-            <IconButton label="Fechar ficha do cliente" onClick={onClose} className="-mr-2">
+            <IconButton label={`Fechar ${eyebrow.toLowerCase()}`} onClick={onClose} className="-mr-2">
               <IconX />
             </IconButton>
           </div>

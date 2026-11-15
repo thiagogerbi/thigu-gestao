@@ -4,7 +4,9 @@ import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/ui/card";
 import { TextField } from "@/components/ui/fields";
 import { ActivationCodeField } from "@/features/activation/activation-code-field";
+import { SegmentPicker } from "@/features/company/segment-picker";
 import { codeFormatError } from "@/lib/domain/activation";
+import type { Segment } from "@/lib/domain/types";
 import { createCompany } from "@/lib/server/actions";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -13,6 +15,7 @@ import { useState } from "react";
 export function CreateCompanyForm({ salesContact }: { salesContact?: string }) {
   const router = useRouter();
   const [name, setName] = useState("");
+  const [segment, setSegment] = useState<Segment>("geral");
   const [code, setCode] = useState("");
   const [pending, setPending] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -29,7 +32,7 @@ export function CreateCompanyForm({ salesContact }: { salesContact?: string }) {
     if (Object.keys(local).length) return;
 
     setPending(true);
-    const r = await createCompany(name, code);
+    const r = await createCompany(name, code, segment);
     setPending(false);
     if (!r.ok) {
       setErrors(r.fieldErrors ?? {});
@@ -52,6 +55,13 @@ export function CreateCompanyForm({ salesContact }: { salesContact?: string }) {
         hint="Como seus clientes conhecem o seu negócio. Dá para mudar depois."
         data-autofocus
       />
+      <div>
+        <SegmentPicker value={segment} onChange={setSegment} />
+        <p className="mt-2 text-sm text-muted">
+          O sistema se ajusta ao ramo: nomes das telas, papéis da equipe e campos das fichas. Dá para trocar depois em
+          “Minha empresa”.
+        </p>
+      </div>
       <ActivationCodeField
         value={code}
         onChange={(v) => {

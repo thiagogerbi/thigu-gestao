@@ -6,7 +6,9 @@ import { Badge, Card, EmptyState, PageHeader } from "@/components/ui/card";
 import { TextField } from "@/components/ui/fields";
 import { IconMoneyIn, IconMoneyOut, IconPlus, IconSearch } from "@/components/ui/icons";
 import { KpiCard } from "@/components/ui/kpi-card";
-import { cx } from "@/components/ui/styles";
+import { cx, keepInView } from "@/components/ui/styles";
+import { onTabListKeyDown } from "@/components/ui/tabs";
+import { CashForecastChart } from "@/features/finance/cash-forecast-chart";
 import { AccountCard } from "@/features/finance/account-card";
 import { addDays, formatDateBR, formatShortDateBR } from "@/lib/domain/dates";
 import { formatBRL } from "@/lib/domain/money";
@@ -95,13 +97,18 @@ export function FinanceScreen() {
       <div
         role="tablist"
         aria-label="Seções do financeiro"
-        className="mb-5 flex gap-1 overflow-x-auto rounded-xl border border-line bg-white p-1"
+        onKeyDown={onTabListKeyDown}
+        className="no-scrollbar mb-5 flex gap-1 overflow-x-auto rounded-xl border border-line bg-white p-1"
       >
         {tabs.map((t) => (
           <button
             key={t.id}
             role="tab"
+            id={`aba-financeiro-${t.id}`}
+            aria-controls="painel-financeiro"
+            tabIndex={tab === t.id ? 0 : -1}
             aria-selected={tab === t.id}
+            ref={tab === t.id ? keepInView : undefined}
             onClick={() => nav.setQuery({ aba: t.id, filtro: null })}
             className={cx(
               "min-h-11 shrink-0 rounded-lg px-4 text-base font-semibold",
@@ -122,23 +129,25 @@ export function FinanceScreen() {
           </button>
         ))}
       </div>
-      <p className="-mt-2 mb-5 rounded-lg bg-primary-50 px-3 py-2 text-primary-700" role="note">
-        {TAB_HELP[tab]}
-      </p>
+      <div role="tabpanel" id="painel-financeiro" aria-labelledby={`aba-financeiro-${tab}`}>
+        <p className="-mt-2 mb-5 rounded-lg bg-primary-50 px-3 py-2 text-primary-700" role="note">
+          {TAB_HELP[tab]}
+        </p>
 
-      {tab === "conferir" && <ReviewTab />}
-      {(tab === "receber" || tab === "pagar") && (
-        <AccountsTab
-          kind={tab}
-          filter={filter}
-          q={q}
-          setQ={(v) => {
-            setQ(v);
-            nav.setQuery({ busca: v || null });
-          }}
-        />
-      )}
-      {tab === "caixa" && <CashTab />}
+        {tab === "conferir" && <ReviewTab />}
+        {(tab === "receber" || tab === "pagar") && (
+          <AccountsTab
+            kind={tab}
+            filter={filter}
+            q={q}
+            setQ={(v) => {
+              setQ(v);
+              nav.setQuery({ busca: v || null });
+            }}
+          />
+        )}
+        {tab === "caixa" && <CashTab />}
+      </div>
     </>
   );
 }
@@ -260,15 +269,16 @@ function AccountsTab({
   return (
     <>
       <div className="mb-3 grid gap-3 md:grid-cols-[1fr_280px]">
-        <div role="group" aria-label="Filtrar por situação" className="flex flex-wrap gap-1.5">
+        <div role="group" aria-label="Filtrar por situação" className="chip-row min-w-0">
           {FILTERS.map((f) => (
             <button
               key={f.id}
               type="button"
               aria-pressed={filter === f.id}
+              ref={filter === f.id ? keepInView : undefined}
               onClick={() => nav.setQuery({ filtro: f.id === "abertas" ? null : f.id })}
               className={cx(
-                "min-h-10 rounded-full border px-3 text-sm font-semibold",
+                "min-h-11 rounded-full border px-3.5 text-sm font-semibold sm:min-h-10 sm:px-3",
                 filter === f.id
                   ? "border-primary bg-primary text-white"
                   : "border-line bg-white text-ink hover:bg-canvas",
@@ -346,6 +356,16 @@ function CashTab() {
           Saldo do caixa + parcelas confirmadas a receber − contas a pagar, por vencimento (inclui o que já está
           atrasado). Negociações em andamento não entram.
         </p>
+        <CashForecastChart
+          points={[
+            { label: "Hoje", sub: formatShortDateBR(today), cents: ov.cashCents },
+            ...ov.forecast.map((f) => ({
+              label: `${f.days} dias`,
+              sub: formatShortDateBR(addDays(today, f.days)),
+              cents: f.netCents,
+            })),
+          ]}
+        />
         <ul className="grid gap-2 sm:grid-cols-3">
           {ov.forecast.map((f) => (
             <li key={f.days} className="rounded-lg bg-canvas p-3 text-sm tabular">

@@ -1,6 +1,6 @@
 "use client";
 
-import { IconArrowRight } from "@/components/ui/icons";
+import { IconChevronRight } from "@/components/ui/icons";
 import { cx } from "@/components/ui/styles";
 import { isOpenStage } from "@/lib/domain/deals";
 import { formatBRL } from "@/lib/domain/money";
@@ -68,41 +68,72 @@ export function MoneyJourney({ ov }: { ov: Overview }) {
     <section
       aria-labelledby="jornada"
       data-tour="jornada"
-      className="mb-8 rounded-2xl border border-line bg-white p-4 sm:p-5"
+      className="mb-8 rounded-2xl border border-line bg-white shadow-card"
     >
-      <h2 id="jornada" className="font-display text-lg font-bold">
-        Do primeiro contato ao dinheiro no bolso
-      </h2>
-      <p className="mb-4 text-muted">É isso que o sistema acompanha. Toque em uma etapa para ver os detalhes.</p>
-      <ol className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
-        {steps.map((s, i) => (
-          <li key={s.label} className="relative">
-            <Link
-              href={s.href}
-              className="flex h-full flex-col rounded-xl border border-line bg-canvas p-3 hover:border-primary hover:bg-primary-50"
-            >
-              <span className="flex items-center gap-2 text-sm font-semibold text-muted">
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-navy text-xs text-white">
+      <div className="px-4 pt-4 sm:px-6 sm:pt-5">
+        <h2 id="jornada" className="font-display text-lg font-bold">
+          Do primeiro contato ao dinheiro no bolso
+        </h2>
+        <p className="text-muted">É isso que o sistema acompanha. Toque em uma etapa para ver os detalhes.</p>
+      </div>
+      {/*
+        Uma trilha, não seis caixas: a linha liga as etapas na ordem em que o dinheiro anda.
+        Tracejada enquanto é só conversa (pode não virar venda), contínua depois da venda fechada
+        e verde quando o dinheiro entra. Em telas largas vira duas colunas: conversa | dinheiro.
+      */}
+      <ol className="grid p-2 sm:grid-flow-col sm:grid-cols-2 sm:grid-rows-3 sm:gap-x-4 sm:px-4 sm:pb-4">
+        {steps.map((s, i) => {
+          const sold = i >= SOLD_STEP;
+          const received = i === steps.length - 1;
+          return (
+            <li key={s.label} className="relative">
+              {i < steps.length - 1 && (
+                <span
+                  aria-hidden="true"
+                  className={cx(
+                    "absolute -bottom-2.5 left-[1.4375rem] top-[2.625rem] border-l-2",
+                    i === SOLD_STEP - 1 && "sm:hidden",
+                    i >= SOLD_STEP + 1 ? "border-money" : sold ? "border-navy" : "border-dashed border-[#aab6c9]",
+                  )}
+                />
+              )}
+              <Link
+                href={s.href}
+                className="relative flex items-start gap-3 rounded-xl px-2 py-2.5 hover:bg-canvas active:bg-canvas"
+              >
+                <span
+                  className={cx(
+                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold tabular",
+                    received
+                      ? "bg-money-700 text-white"
+                      : sold
+                        ? "bg-navy text-white"
+                        : "border-2 border-dashed border-[#aab6c9] bg-white text-muted",
+                  )}
+                >
                   {i + 1}
                 </span>
-                {s.label}
-              </span>
-              <span
-                className={cx(
-                  "mt-1 font-display text-xl font-extrabold tabular",
-                  s.tone === "money" ? "text-money-700" : s.tone === "danger" ? "text-danger" : "text-ink",
-                )}
-              >
-                {s.value}
-              </span>
-              <span className="text-sm text-muted">{s.detail}</span>
-            </Link>
-            {i < steps.length - 1 && (
-              <IconArrowRight className="absolute -right-2.5 top-1/2 z-10 hidden h-4 w-4 -translate-y-1/2 text-[#9aa6b8] xl:block" />
-            )}
-          </li>
-        ))}
+                <span className="min-w-0 flex-1 pt-1">
+                  <span className="block font-semibold leading-6">{s.label}</span>
+                  <span className="block text-sm text-muted">{s.detail}</span>
+                </span>
+                <span
+                  className={cx(
+                    "shrink-0 whitespace-nowrap font-display text-lg font-extrabold leading-8 tabular",
+                    s.tone === "money" ? "text-money-700" : s.tone === "danger" ? "text-danger" : "text-ink",
+                  )}
+                >
+                  {s.value}
+                </span>
+                <IconChevronRight className="mt-2 h-4 w-4 shrink-0 text-[#8a97ab]" />
+              </Link>
+            </li>
+          );
+        })}
       </ol>
     </section>
   );
 }
+
+/** A partir desta etapa (Vendido) o valor deixa de ser incerto. */
+const SOLD_STEP = 3;

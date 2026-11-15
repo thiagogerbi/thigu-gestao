@@ -6,6 +6,25 @@ export function formatBRL(cents: number): string {
   return BRL.format(cents / 100).replace(/ /g, " ");
 }
 
+const BRL_COMPACT = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+const BRL_WHOLE = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+
+/**
+ * Versão curta para rótulos de gráfico, onde o valor exato não cabe:
+ * 150000 → "R$ 1,5 mil"; abaixo de mil reais, sem centavos (61010 → "R$ 610").
+ */
+export function formatBRLCompact(cents: number): string {
+  if (!Number.isInteger(cents)) throw new Error("Valor em centavos precisa ser inteiro");
+  const fmt = Math.abs(cents) < 100_000 ? BRL_WHOLE : BRL_COMPACT;
+  return fmt.format(cents / 100).replace(/ /g, " ");
+}
+
 /** Centavos → texto para campo de formulário: 20000 → "200,00". */
 export function centsToInput(cents: number): string {
   const neg = cents < 0;

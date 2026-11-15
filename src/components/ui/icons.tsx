@@ -70,6 +70,7 @@ export const IconSearch = ({ className }: P) =>
     className,
   );
 export const IconArrowRight = ({ className }: P) => base(<path d="M5 12h14M13 6l6 6-6 6" />, className);
+export const IconChevronRight = ({ className }: P) => base(<path d="M9 6l6 6-6 6" />, className);
 export const IconArrowLeft = ({ className }: P) => base(<path d="M19 12H5M11 6l-6 6 6 6" />, className);
 export const IconAlert = ({ className }: P) =>
   base(
@@ -138,6 +139,24 @@ export const IconBuilding = ({ className }: P) =>
     </>,
     className,
   );
+export const IconCalendar = ({ className }: P) =>
+  base(
+    <>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2" />
+      <path d="M3.5 10h17M8 3v4M16 3v4" />
+    </>,
+    className,
+  );
+export const IconRepeat = ({ className }: P) =>
+  base(
+    <>
+      <path d="M17 2.5l3 3-3 3" />
+      <path d="M4 11.5v-1a5 5 0 0 1 5-5h11" />
+      <path d="M7 21.5l-3-3 3-3" />
+      <path d="M20 12.5v1a5 5 0 0 1-5 5H4" />
+    </>,
+    className,
+  );
 export const IconMenu = ({ className }: P) => base(<path d="M4 7h16M4 12h16M4 17h16" />, className);
 export const IconMoneyIn = ({ className }: P) =>
   base(
@@ -152,6 +171,62 @@ export const IconMoneyOut = ({ className }: P) =>
     <>
       <circle cx="12" cy="12" r="9" />
       <path d="M12 17V7M8.5 10.5L12 7l3.5 3.5" />
+    </>,
+    className,
+  );
+export const IconRegister = ({ className }: P) =>
+  base(
+    <>
+      <rect x="3" y="10" width="18" height="10" rx="2" />
+      <path d="M7 10V5h10v5M7 15h2M11 15h2M15 15h2" />
+    </>,
+    className,
+  );
+export const IconPercent = ({ className }: P) =>
+  base(
+    <>
+      <path d="M19 5L5 19" />
+      <circle cx="7" cy="7" r="2.5" />
+      <circle cx="17" cy="17" r="2.5" />
+    </>,
+    className,
+  );
+export const IconGroup = ({ className }: P) =>
+  base(
+    <>
+      <circle cx="12" cy="7" r="3" />
+      <circle cx="5" cy="10" r="2.2" />
+      <circle cx="19" cy="10" r="2.2" />
+      <path d="M7 20c0-3 2.2-5 5-5s5 2 5 5M1.5 19c0-2.2 1.5-3.8 3.5-3.8M22.5 19c0-2.2-1.5-3.8-3.5-3.8" />
+    </>,
+    className,
+  );
+export const IconWrench = ({ className }: P) =>
+  base(
+    <path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3.5 17.5a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.5-.5-.5-2.5z" />,
+    className,
+  );
+export const IconBox = ({ className }: P) =>
+  base(
+    <>
+      <path d="M3 7.5L12 3l9 4.5v9L12 21l-9-4.5z" />
+      <path d="M3 7.5L12 12l9-4.5M12 12v9" />
+    </>,
+    className,
+  );
+export const IconCard = ({ className }: P) =>
+  base(
+    <>
+      <rect x="2.5" y="5" width="19" height="14" rx="2" />
+      <path d="M2.5 10h19M6 15h4" />
+    </>,
+    className,
+  );
+export const IconClipboard = ({ className }: P) =>
+  base(
+    <>
+      <rect x="5" y="4" width="14" height="17" rx="2" />
+      <path d="M9 4h6v3H9zM9 12h6M9 16h4" />
     </>,
     className,
   );

@@ -31,11 +31,12 @@ export function TaskItem({ task, showClient = true }: { task: Task; showClient?:
   return (
     <li
       className={cx(
-        "flex flex-wrap items-start gap-3 rounded-xl border bg-white p-3 sm:flex-nowrap",
+        "flex flex-wrap items-start gap-x-3 gap-y-2 rounded-2xl border bg-white p-3.5 shadow-card sm:flex-nowrap",
         late ? "border-[#f7c9c4]" : "border-line",
       )}
     >
-      <div className="min-w-0 flex-1">
+      {/* no celular o texto ocupa a linha inteira e os botões descem, em vez de espremer o título */}
+      <div className="min-w-0 flex-1 basis-full sm:basis-0">
         <p className={cx("font-semibold", done && "text-muted line-through")}>{task.title}</p>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
           {late && <Badge tone="red">Atrasada · {relativeDayLabel(task.dueDate, today)}</Badge>}
@@ -57,7 +58,7 @@ export function TaskItem({ task, showClient = true }: { task: Task; showClient?:
           <span>{task.assigneeId === me.userId ? "Você" : name(task.assigneeId)}</span>
         </p>
       </div>
-      <div className="flex gap-2">
+      <div className="flex w-full justify-end gap-2 sm:w-auto">
         {!done && (
           <Button
             size="sm"

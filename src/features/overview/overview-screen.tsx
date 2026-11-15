@@ -1,7 +1,7 @@
 "use client";
 
 import { useDialogs } from "@/components/layout/dialog-context";
-import { Button } from "@/components/ui/button";
+import { Button, LinkButton } from "@/components/ui/button";
 import { Card, PageHeader } from "@/components/ui/card";
 import { HelpTip } from "@/components/ui/help-tip";
 import {
@@ -15,14 +15,18 @@ import {
   IconWallet,
 } from "@/components/ui/icons";
 import { cx } from "@/components/ui/styles";
+import { TodayAgenda } from "@/features/agenda/today-agenda";
 import { MoneyJourney } from "@/features/overview/money-journey";
 import { formatDateBR } from "@/lib/domain/dates";
 import { formatBRL } from "@/lib/domain/money";
 import { computeOverview } from "@/lib/domain/overview";
+import { usesCrm } from "@/lib/domain/permissions";
 import { proposalTotalCents } from "@/lib/domain/proposals";
 import { useBackend, useCan } from "@/state/backend-context";
 import { clientById, firstName } from "@/state/selectors";
 import { useNav } from "@/state/use-nav";
+import { useAgenda } from "@/state/use-agenda";
+import { useTerms } from "@/state/use-terms";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -62,6 +66,11 @@ export function OverviewScreen() {
   const fin = canDo("financeiro.ver");
   const crm = canDo("crm.editar_proprios");
   const seesReceivables = fin || canDo("recebiveis.ver_proprios");
+  const t = useTerms();
+  // recepção, profissional e caixa não acompanham vendas nem dinheiro: veem um resumo dos clientes
+  const followsSales = usesCrm(me.roles) || fin;
+  const mayAddClient = canDo("clientes.editar_proprios");
+  const agenda = useAgenda();
 
   // Avisos em ordem de urgência: dinheiro atrasado primeiro, depois o que trava o fluxo, depois o dia a dia.
   const priorities: Priority[] = [];
@@ -181,13 +190,21 @@ export function OverviewScreen() {
   const nextStep = steps.findIndex((s) => !s.done);
 
   const primary =
-    canDo("financeiro.registrar") && !crm ? (
+    agenda.enabled && agenda.manageable.length > 0 ? (
+      <Button size="lg" onClick={() => dialogs.open({ kind: "appointment" })}>
+        <IconPlus className="h-5 w-5" /> Marcar horário
+      </Button>
+    ) : canDo("financeiro.registrar") && !crm ? (
       <Button variant="money" size="lg" onClick={() => dialogs.open({ kind: "settle", accountKind: "receber" })}>
         <IconMoneyIn className="h-5 w-5" /> Registrar recebimento
       </Button>
     ) : crm ? (
       <Button size="lg" onClick={() => dialogs.open({ kind: "deal" })}>
         <IconPlus className="h-5 w-5" /> Nova negociação
+      </Button>
+    ) : mayAddClient ? (
+      <Button size="lg" onClick={() => dialogs.open({ kind: "client" })}>
+        <IconPlus className="h-5 w-5" /> Novo {t.cliente}
       </Button>
     ) : null;
 
@@ -202,6 +219,8 @@ export function OverviewScreen() {
         }
         actions={primary}
       />
+
+      <TodayAgenda />
 
       {showOnboarding && (
         <Card className="mb-6 p-5">
@@ -265,7 +284,7 @@ export function OverviewScreen() {
                   <Link
                     href={p.href}
                     className={cx(
-                      "flex items-center gap-3 rounded-xl border bg-white p-4 hover:shadow-md",
+                      "flex items-center gap-3 rounded-2xl border bg-white p-4 shadow-card transition-shadow hover:shadow-raised",
                       TONE_BORDER[p.tone],
                     )}
                   >
@@ -298,7 +317,25 @@ export function OverviewScreen() {
         )}
       </section>
 
-      <MoneyJourney ov={ov} />
+      {followsSales ? (
+        <MoneyJourney ov={ov} />
+      ) : agenda.enabled ? null : (
+        <Card className="p-5">
+          <h2 className="font-display text-lg font-bold">{t.Clientes}</h2>
+          <p className="text-muted">
+            {data.clients.length === 0
+              ? `Nenhum ${t.cliente} ${canDo("clientes.ver_todos") ? "cadastrado" : "sob seus cuidados"} ainda.`
+              : canDo("clientes.ver_todos")
+                ? `${plural(data.clients.length, `${t.cliente} cadastrado`, `${t.clientes} cadastrados`)}.`
+                : `${plural(data.clients.length, t.cliente, t.clientes)} sob seus cuidados.`}
+          </p>
+          <div className="mt-3">
+            <LinkButton href={nav.href("/clientes")} variant="secondary">
+              Ver {t.clientes}
+            </LinkButton>
+          </div>
+        </Card>
+      )}
 
       {seesReceivables && (
         <section aria-labelledby="dinheiro">
@@ -348,20 +385,23 @@ function MoneyFigure({
   const color = tone === "money" ? "text-money-700" : tone === "primary" ? "text-primary-700" : "text-ink";
   const body = (
     <>
-      <span className="font-display text-3xl font-extrabold tabular">{formatBRL(value)}</span>
+      <span className="whitespace-nowrap font-display text-2xl font-extrabold tabular sm:text-3xl">
+        {formatBRL(value)}
+      </span>
     </>
   );
   return (
-    <div className="rounded-xl border border-line bg-white p-4">
+    // no celular: nome à esquerda e valor à direita, numa linha só
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-white p-4 shadow-card sm:block">
       <p className="flex items-center gap-2 font-semibold">
         {label} <HelpTip term={label}>{help}</HelpTip>
       </p>
       {href ? (
-        <Link href={href} className={cx("mt-1 block hover:underline", color)}>
+        <Link href={href} className={cx("block hover:underline sm:mt-1", color)}>
           {body}
         </Link>
       ) : (
-        <p className={cx("mt-1", color)}>{body}</p>
+        <p className={cx("sm:mt-1", color)}>{body}</p>
       )}
     </div>
   );

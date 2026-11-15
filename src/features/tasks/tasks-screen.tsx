@@ -4,7 +4,8 @@ import { useDialogs } from "@/components/layout/dialog-context";
 import { Button } from "@/components/ui/button";
 import { EmptyState, PageHeader } from "@/components/ui/card";
 import { IconPlus } from "@/components/ui/icons";
-import { cx } from "@/components/ui/styles";
+import { cx, keepInView } from "@/components/ui/styles";
+import { onTabListKeyDown } from "@/components/ui/tabs";
 import { TaskItem } from "@/features/tasks/task-item";
 import { useBackend, useCan } from "@/state/backend-context";
 import { useNav } from "@/state/use-nav";
@@ -66,16 +67,21 @@ export function TasksScreen() {
         <div
           role="tablist"
           aria-label="Filtrar tarefas"
-          className="flex flex-wrap gap-1 rounded-xl border border-line bg-white p-1"
+          onKeyDown={onTabListKeyDown}
+          className="no-scrollbar flex max-w-full gap-1 overflow-x-auto rounded-xl border border-line bg-white p-1"
         >
           {FILTERS.map((f) => (
             <button
               key={f.id}
               role="tab"
+              id={`aba-tarefas-${f.id}`}
+              aria-controls="painel-tarefas"
+              tabIndex={filter === f.id ? 0 : -1}
               aria-selected={filter === f.id}
+              ref={filter === f.id ? keepInView : undefined}
               onClick={() => nav.setQuery({ filtro: f.id === "todas" ? null : f.id })}
               className={cx(
-                "min-h-10 rounded-lg px-3 text-sm font-semibold",
+                "min-h-11 shrink-0 whitespace-nowrap rounded-lg px-3 text-sm font-semibold sm:min-h-10",
                 filter === f.id ? "bg-primary text-white" : "text-ink hover:bg-canvas",
                 f.id === "atrasadas" && counts.atrasadas > 0 && filter !== f.id && "text-danger",
               )}
@@ -100,27 +106,29 @@ export function TasksScreen() {
           </select>
         </label>
       </div>
-      {list.length === 0 ? (
-        <EmptyState
-          title={
-            filter === "atrasadas"
-              ? "Nenhuma tarefa atrasada"
-              : filter === "hoje"
-                ? "Nada para hoje"
-                : "Nenhuma tarefa aqui"
-          }
-        >
-          {filter === "concluidas"
-            ? "Tarefas concluídas aparecem aqui."
-            : "Crie tarefas para lembrar de ligar, enviar algo ou cobrar um retorno."}
-        </EmptyState>
-      ) : (
-        <ul className="grid gap-2">
-          {list.map((t) => (
-            <TaskItem key={t.id} task={t} />
-          ))}
-        </ul>
-      )}
+      <div role="tabpanel" id="painel-tarefas" aria-labelledby={`aba-tarefas-${filter}`}>
+        {list.length === 0 ? (
+          <EmptyState
+            title={
+              filter === "atrasadas"
+                ? "Nenhuma tarefa atrasada"
+                : filter === "hoje"
+                  ? "Nada para hoje"
+                  : "Nenhuma tarefa aqui"
+            }
+          >
+            {filter === "concluidas"
+              ? "Tarefas concluídas aparecem aqui."
+              : "Crie tarefas para lembrar de ligar, enviar algo ou cobrar um retorno."}
+          </EmptyState>
+        ) : (
+          <ul className="grid gap-2">
+            {list.map((t) => (
+              <TaskItem key={t.id} task={t} />
+            ))}
+          </ul>
+        )}
+      </div>
     </>
   );
 }

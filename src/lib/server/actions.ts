@@ -3,7 +3,8 @@
 import { parseAction, type ActionResult } from "@/lib/actions/schemas";
 import { canonicalCode, codeFormatError } from "@/lib/domain/activation";
 import { formatDateBR } from "@/lib/domain/dates";
-import type { CompanyData, Role } from "@/lib/domain/types";
+import { SEGMENT_IDS } from "@/lib/domain/segments";
+import type { CompanyData, Role, Segment } from "@/lib/domain/types";
 import { COMPANY_COOKIE } from "@/lib/server/constants";
 import { executeAction } from "@/lib/server/execute";
 import { loadCompanyData } from "@/lib/server/load";
@@ -74,8 +75,8 @@ function redeemFailure(r: RedeemResult): ActionResult {
   return { ok: false, message, fieldErrors: { [r.field ?? "code"]: message } };
 }
 
-/** Cadastra a empresa usando o código de ativação recebido por e-mail depois da compra. */
-export async function createCompany(name: string, code: string): Promise<ActionResult> {
+/** Cadastra a empresa, no ramo escolhido, usando o código de ativação recebido por e-mail depois da compra. */
+export async function createCompany(name: string, code: string, segment: string = "geral"): Promise<ActionResult> {
   const s = await session();
   if (!s) return { ok: false, message: "Sua sessão terminou. Entre novamente." };
   const fieldErrors: Record<string, string> = {};
@@ -89,8 +90,13 @@ export async function createCompany(name: string, code: string): Promise<ActionR
   const codeError = codeFormatError(code);
   if (codeError) fieldErrors.code = codeError;
   if (Object.keys(fieldErrors).length) return { ok: false, message: "Confira os campos destacados.", fieldErrors };
+  if (!SEGMENT_IDS.includes(segment as Segment)) return { ok: false, message: "Escolha o ramo da empresa." };
 
-  const { data, error } = await s.sb.rpc("create_company", { p_name: parsedName.data, p_code: canonicalCode(code) });
+  const { data, error } = await s.sb.rpc("create_company", {
+    p_name: parsedName.data,
+    p_code: canonicalCode(code),
+    p_segment: segment,
+  });
   if (error) {
     console.error("[thigu] create_company", error);
     return { ok: false, message: "Não foi possível criar a empresa agora. Tente de novo em instantes." };
@@ -125,21 +131,54 @@ export async function renewAccess(companyId: string, code: string): Promise<Acti
   return { ok: true, message: `Acesso renovado até ${formatDateBR(r.access_until!)}.` };
 }
 
-const roleList = z.array(z.enum(["admin", "gestor", "vendedor", "financeiro"])).min(1, "Escolha pelo menos um papel.");
+const roleList = z
+  .array(z.enum(["admin", "gestor", "vendedor", "financeiro", "recepcao", "profissional", "caixa"]))
+  .min(1, "Escolha pelo menos um papel.");
 
-export async function addMember(companyId: string, email: string, roles: string[]): Promise<ActionResult> {
+/** Mensagens que as funções do banco escrevem para a pessoa ler (as demais viram um texto genérico). */
+const DB_MESSAGE_CODES = new Set(["P0001", "P0002", "22023", "42501"]);
+function dbMessage(error: { message?: string; code?: string }, fallback: string) {
+  return error.code && DB_MESSAGE_CODES.has(error.code) && error.message ? error.message : fallback;
+}
+
+/** Cria (ou atualiza) o convite para um e-mail. O vínculo só existe quando a pessoa aceitar. */
+export async function inviteMember(companyId: string, email: string, roles: string[]): Promise<ActionResult> {
   const s = await session();
   if (!s) return { ok: false, message: "Sua sessão terminou. Entre novamente." };
   const r = roleList.safeParse(roles);
   const e = z.string().trim().email("E-mail inválido.").safeParse(email);
+  if (!uuid.safeParse(companyId).success) return { ok: false, message: "Empresa inválida." };
   if (!r.success) return { ok: false, message: r.error.issues[0].message };
   if (!e.success)
     return { ok: false, message: e.error.issues[0].message, fieldErrors: { email: e.error.issues[0].message } };
   const mine = await rolesIn(s.sb, companyId, s.user.id);
   if (!mine?.includes("admin")) return { ok: false, message: "Somente o administrador gerencia membros." };
-  const { error } = await s.sb.rpc("add_member_by_email", { p_company: companyId, p_email: e.data, p_roles: r.data });
-  if (error) return { ok: false, message: error.message };
-  return { ok: true, message: `${e.data} agora faz parte da empresa.` };
+  const { error } = await s.sb.rpc("invite_member", { p_company: companyId, p_email: e.data, p_roles: r.data });
+  if (error) return { ok: false, message: dbMessage(error, "Não foi possível criar o convite agora.") };
+  return {
+    ok: true,
+    message: `Convite criado para ${e.data.toLowerCase()}. Avise a pessoa: ele aparece quando ela entrar no Thigu com este e-mail.`,
+  };
+}
+
+export async function cancelInvite(inviteId: string): Promise<ActionResult> {
+  const s = await session();
+  if (!s) return { ok: false, message: "Sua sessão terminou. Entre novamente." };
+  if (!uuid.safeParse(inviteId).success) return { ok: false, message: "Convite inválido." };
+  const { error } = await s.sb.rpc("cancel_invite", { p_invite: inviteId });
+  if (error) return { ok: false, message: dbMessage(error, "Não foi possível cancelar o convite agora.") };
+  return { ok: true, message: "Convite cancelado." };
+}
+
+/** Resposta de quem foi convidado. Ao aceitar, a empresa passa a ser a empresa aberta. */
+export async function respondInvite(inviteId: string, accept: boolean): Promise<ActionResult> {
+  const s = await session();
+  if (!s) return { ok: false, message: "Sua sessão terminou. Entre novamente." };
+  if (!uuid.safeParse(inviteId).success) return { ok: false, message: "Convite inválido." };
+  const { data, error } = await s.sb.rpc("respond_invite", { p_invite: inviteId, p_accept: accept });
+  if (error) return { ok: false, message: dbMessage(error, "Não foi possível responder ao convite agora.") };
+  if (accept) await switchCompany(data as string);
+  return { ok: true, message: accept ? "Convite aceito." : "Convite recusado.", id: data as string };
 }
 
 export async function setMemberRoles(

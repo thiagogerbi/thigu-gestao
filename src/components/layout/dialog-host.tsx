@@ -2,6 +2,39 @@
 
 import { DialogContext, type DialogProps, type DialogSpec } from "@/components/layout/dialog-context";
 import { ClientDialog } from "@/features/clients/client-dialog";
+import { ItemDialog } from "@/features/clients/item-dialog";
+import { AppointmentDialog } from "@/features/agenda/appointment-dialog";
+import { BlockDialog } from "@/features/agenda/block-dialog";
+import { NoShowDialog } from "@/features/agenda/no-show-dialog";
+import { CashCloseDialog } from "@/features/cash/cash-close-dialog";
+import { CashReceiveDialog } from "@/features/cash/cash-receive-dialog";
+import { CashSaleDialog } from "@/features/cash/cash-sale-dialog";
+import { ClassDialog } from "@/features/classes/class-dialog";
+import { EnrollDialog } from "@/features/classes/enroll-dialog";
+import { CommissionRuleDialog } from "@/features/commissions/commission-rule-dialog";
+import { ProductDialog } from "@/features/services/product-dialog";
+import { ReturnDialog } from "@/features/stock/return-dialog";
+import {
+  OrderCancelDialog,
+  OrderDeliverDialog,
+  OrderEditDialog,
+  OrderNewDialog,
+  PrescriptionDialog,
+} from "@/features/orders/order-dialogs";
+import { CreditLimitDialog, StockAdjustDialog, StockEntryDialog } from "@/features/stock/stock-dialogs";
+import {
+  VehicleTransferDialog,
+  WorkOrderApproveDialog,
+  WorkOrderCancelDialog,
+  WorkOrderDeliverDialog,
+  WorkOrderEditDialog,
+  WorkOrderItemDialog,
+  WorkOrderNewDialog,
+} from "@/features/workshop/work-order-dialogs";
+import { PackageDialog } from "@/features/recurring/package-dialog";
+import { SubscriptionDialog } from "@/features/recurring/subscription-dialog";
+import { ResourceDialog } from "@/features/services/resource-dialog";
+import { ServiceDialog } from "@/features/services/service-dialog";
 import { DealDialog } from "@/features/deals/deal-dialog";
 import { LostDealDialog } from "@/features/deals/lost-deal-dialog";
 import { CancelAccountDialog } from "@/features/finance/cancel-account-dialog";
@@ -21,6 +54,76 @@ function renderDialog(spec: DialogSpec, props: DialogProps) {
   switch (spec.kind) {
     case "client":
       return <ClientDialog {...props} clientId={spec.clientId} />;
+    case "item":
+      return <ItemDialog {...props} clientId={spec.clientId} itemId={spec.itemId} />;
+    case "appointment":
+      return (
+        <AppointmentDialog
+          {...props}
+          appointmentId={spec.appointmentId}
+          clientId={spec.clientId}
+          resourceId={spec.resourceId}
+          date={spec.date}
+        />
+      );
+    case "noShow":
+      return <NoShowDialog {...props} appointmentId={spec.appointmentId} />;
+    case "block":
+      return <BlockDialog {...props} resourceId={spec.resourceId} date={spec.date} />;
+    case "product":
+      return <ProductDialog {...props} productId={spec.productId} />;
+    case "cashSale":
+      return <CashSaleDialog {...props} />;
+    case "cashReceive":
+      return <CashReceiveDialog {...props} accountId={spec.accountId} />;
+    case "cashClose":
+      return <CashCloseDialog {...props} />;
+    case "commissionRule":
+      return <CommissionRuleDialog {...props} ruleId={spec.ruleId} resourceId={spec.resourceId} />;
+    case "classGroup":
+      return <ClassDialog {...props} classId={spec.classId} />;
+    case "enroll":
+      return <EnrollDialog {...props} classId={spec.classId} />;
+    case "workOrderNew":
+      return <WorkOrderNewDialog {...props} clientId={spec.clientId} itemId={spec.itemId} />;
+    case "workOrderEdit":
+      return <WorkOrderEditDialog {...props} workOrderId={spec.workOrderId} />;
+    case "woItem":
+      return <WorkOrderItemDialog {...props} workOrderId={spec.workOrderId} itemKind={spec.itemKind} />;
+    case "woApprove":
+      return <WorkOrderApproveDialog {...props} workOrderId={spec.workOrderId} />;
+    case "woDeliver":
+      return <WorkOrderDeliverDialog {...props} workOrderId={spec.workOrderId} />;
+    case "woCancel":
+      return <WorkOrderCancelDialog {...props} workOrderId={spec.workOrderId} />;
+    case "vehicleTransfer":
+      return <VehicleTransferDialog {...props} itemId={spec.itemId} />;
+    case "stockEntry":
+      return <StockEntryDialog {...props} productId={spec.productId} />;
+    case "stockAdjust":
+      return <StockAdjustDialog {...props} productId={spec.productId} />;
+    case "counterReturn":
+      return <ReturnDialog {...props} saleId={spec.saleId} />;
+    case "creditLimit":
+      return <CreditLimitDialog {...props} clientId={spec.clientId} />;
+    case "orderNew":
+      return <OrderNewDialog {...props} clientId={spec.clientId} />;
+    case "orderEdit":
+      return <OrderEditDialog {...props} orderId={spec.orderId} />;
+    case "orderDeliver":
+      return <OrderDeliverDialog {...props} orderId={spec.orderId} />;
+    case "orderCancel":
+      return <OrderCancelDialog {...props} orderId={spec.orderId} />;
+    case "prescription":
+      return <PrescriptionDialog {...props} clientId={spec.clientId} />;
+    case "package":
+      return <PackageDialog {...props} clientId={spec.clientId} />;
+    case "subscription":
+      return <SubscriptionDialog {...props} clientId={spec.clientId} subscriptionId={spec.subscriptionId} />;
+    case "service":
+      return <ServiceDialog {...props} serviceId={spec.serviceId} />;
+    case "resource":
+      return <ResourceDialog {...props} resourceId={spec.resourceId} userId={spec.userId} />;
     case "deal":
       return <DealDialog {...props} dealId={spec.dealId} clientId={spec.clientId} />;
     case "task":

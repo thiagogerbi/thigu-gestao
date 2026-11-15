@@ -3,9 +3,16 @@
  * As datas são calculadas a partir de "hoje" para que a prévia pareça sempre atual.
  */
 import { addDays, toISODate } from "@/lib/domain/dates";
+import { buildPlan } from "@/lib/domain/installments";
+import { subscriptionChargeDescription, subscriptionPeriods } from "@/lib/domain/recurring";
+import { classDates } from "@/lib/domain/classes";
+import { addMonths } from "@/lib/domain/dates";
 import {
   EMPTY_PROFILE,
   type Account,
+  type Appointment,
+  type Subscription,
+  type WorkHours,
   type CompanyData,
   type Deal,
   type Member,
@@ -13,9 +20,29 @@ import {
   type Proposal,
   type Sale,
   type Task,
+  type Product,
+  type CounterSale,
+  type Order,
+  type WorkOrder,
+  type WorkOrderItem,
 } from "@/lib/domain/types";
 
-export const PREVIEW_COMPANY_IDS = { aurora: "empresa-aurora", horizonte: "empresa-horizonte" } as const;
+export const PREVIEW_COMPANY_IDS = {
+  aurora: "empresa-aurora",
+  horizonte: "empresa-horizonte",
+  clinica: "empresa-clinica",
+  pet: "empresa-pet",
+  salao: "empresa-salao",
+  pilates: "empresa-pilates",
+  oficina: "empresa-oficina",
+  autopecas: "empresa-autopecas",
+  otica: "empresa-otica",
+} as const;
+
+/** Mesmo horário em vários dias da semana (0 = domingo). */
+function weekdays(days: number[], periods: [string, string][]): WorkHours {
+  return Object.fromEntries(days.map((d) => [String(d), periods])) as WorkHours;
+}
 
 export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
   const today = toISODate(now);
@@ -24,6 +51,43 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     const [y, m, d] = day(n).split("-").map(Number);
     return new Date(y, m - 1, d, hour, 0, 0).toISOString();
   };
+  /** Horário de atendimento: dia relativo a hoje, hora e minuto locais. */
+  const slot = (n: number, hour: number, minute: number, durationMin: number) => {
+    const [y, m, d] = day(n).split("-").map(Number);
+    const start = new Date(y, m - 1, d, hour, minute, 0);
+    return { startsAt: start.toISOString(), endsAt: new Date(start.getTime() + durationMin * 60_000).toISOString() };
+  };
+  const receivable = (
+    p: Pick<Account, "id" | "clientId" | "description" | "origin" | "amountCents" | "dueDate"> & Partial<Account>,
+  ): Account => ({
+    kind: "receber",
+    supplier: null,
+    saleId: null,
+    installmentNumber: 1,
+    installmentCount: 1,
+    category: null,
+    canceledAt: null,
+    canceledBy: null,
+    cancelReason: null,
+    createdAt: at(-30),
+    ...p,
+  });
+  const appointment = (
+    p: Pick<Appointment, "id" | "clientId" | "resourceId" | "serviceId" | "priceCents"> &
+      Partial<Appointment> & { startsAt: string; endsAt: string },
+  ): Appointment => ({
+    itemId: null,
+    status: "agendado",
+    notes: "",
+    seriesId: null,
+    accountId: null,
+    remindedAt: null,
+    packageId: null,
+    consumesPackage: false,
+    createdBy: "u-ana",
+    createdAt: at(-10),
+    ...p,
+  });
 
   // ---------- Aurora Estúdio (empresa com dados) ----------
   const auroraMembers: Member[] = [
@@ -33,14 +97,15 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     { userId: "u-diego", name: "Diego Rocha", email: "diego@aurora.exemplo", roles: ["gestor"] },
   ];
 
-  const client = (id: string, name: string, email: string, phone: string, ownerId: string, created: number) => ({
-    id,
-    name,
-    email,
-    phone,
-    ownerId,
-    createdAt: at(created),
-  });
+  const client = (
+    id: string,
+    name: string,
+    email: string,
+    phone: string,
+    ownerId: string,
+    created: number,
+    extra: Record<string, string> = {},
+  ) => ({ id, name, email, phone, ownerId, extra, createdAt: at(created) });
   const clients = [
     client("c-marina", "Marina Costa", "marina@cafe-marina.exemplo", "(11) 90000-1001", "u-bruno", -60),
     client("c-joao", "João Pereira", "joao@paoquente.exemplo", "(11) 90000-1002", "u-bruno", -45),
@@ -488,6 +553,32 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     },
     members: auroraMembers,
     clients,
+    items: [],
+    resources: [],
+    services: [],
+    appointments: [],
+    clinicalNotes: [],
+    packages: [],
+    subscriptions: [],
+    blocks: [],
+    products: [],
+    cashSessions: [],
+    cashSaleItems: [],
+    commissionRules: [],
+    commissionClosings: [],
+    classes: [],
+    enrollments: [],
+    attendance: [],
+    workOrders: [],
+    workOrderItems: [],
+    workOrderEvents: [],
+    workOrderPhotos: [],
+    stockMovements: [],
+    counterSales: [],
+    orders: [],
+    orderItems: [],
+    orderEvents: [],
+    prescriptions: [],
     deals,
     tasks,
     notes,
@@ -507,6 +598,32 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
       { userId: "u-fernanda", name: "Fernanda Alves", email: "fernanda@horizonte.exemplo", roles: ["financeiro"] },
     ],
     clients: [],
+    items: [],
+    resources: [],
+    services: [],
+    appointments: [],
+    clinicalNotes: [],
+    packages: [],
+    subscriptions: [],
+    blocks: [],
+    products: [],
+    cashSessions: [],
+    cashSaleItems: [],
+    commissionRules: [],
+    commissionClosings: [],
+    classes: [],
+    enrollments: [],
+    attendance: [],
+    workOrders: [],
+    workOrderItems: [],
+    workOrderEvents: [],
+    workOrderPhotos: [],
+    stockMovements: [],
+    counterSales: [],
+    orders: [],
+    orderItems: [],
+    orderEvents: [],
+    prescriptions: [],
     deals: [],
     tasks: [],
     notes: [],
@@ -517,5 +634,1850 @@ export function buildPreviewSeed(now: Date = new Date()): CompanyData[] {
     activities: [],
   };
 
-  return [aurora, horizonte];
+  // função (e não um objeto só) para que as empresas não compartilhem as mesmas listas
+  const empty = () => ({
+    appointments: [],
+    clinicalNotes: [],
+    packages: [],
+    subscriptions: [],
+    blocks: [],
+    products: [],
+    cashSessions: [],
+    cashSaleItems: [],
+    commissionRules: [],
+    commissionClosings: [],
+    classes: [],
+    enrollments: [],
+    attendance: [],
+    workOrders: [],
+    workOrderItems: [],
+    workOrderEvents: [],
+    workOrderPhotos: [],
+    stockMovements: [],
+    counterSales: [],
+    orders: [],
+    orderItems: [],
+    orderEvents: [],
+    prescriptions: [],
+    deals: [],
+    tasks: [],
+    notes: [],
+    proposals: [],
+    sales: [],
+    accounts: [],
+    movements: [],
+    activities: [],
+  });
+
+  // ---------- Clínica Bem Viver (ramo: consultório ou clínica) ----------
+  // mensalidade que começou há uns 70 dias: uma cobrança paga, uma atrasada e a deste mês
+  const beatrizPlan: Subscription = {
+    id: "sub-beatriz",
+    clientId: "p-beatriz",
+    name: "Psicoterapia mensal (4 sessões)",
+    amountCents: 80000,
+    dayOfMonth: Math.min(Number(day(-2).slice(8, 10)), 28),
+    startsOn: day(-70),
+    endsOn: null,
+    canceledAt: null,
+    createdAt: at(-70),
+  };
+  const clinica: CompanyData = {
+    company: {
+      ...EMPTY_PROFILE,
+      id: PREVIEW_COMPANY_IDS.clinica,
+      name: "Clínica Bem Viver",
+      segment: "clinica",
+      phone: "(11) 4002-1010",
+    },
+    members: [
+      { userId: "u-ana", name: "Ana Souza", email: "ana@bemviver.exemplo", roles: ["admin"] },
+      { userId: "u-helena", name: "Helena Prado", email: "helena@bemviver.exemplo", roles: ["profissional"] },
+      { userId: "u-igor", name: "Igor Batista", email: "igor@bemviver.exemplo", roles: ["profissional"] },
+      { userId: "u-julia", name: "Júlia Campos", email: "julia@bemviver.exemplo", roles: ["recepcao"] },
+    ],
+    clients: [
+      client("p-beatriz", "Beatriz Nunes", "beatriz@correio.exemplo", "(11) 90000-2001", "u-helena", -90, {
+        nascimento: "1991-03-14",
+        convenio: "Particular",
+      }),
+      client("p-caio", "Caio Ferraz", "", "(11) 90000-2002", "u-helena", -30, {
+        nascimento: "2014-08-02",
+        responsavel: "Renata Ferraz (mãe)",
+      }),
+      client("p-denise", "Denise Araújo", "denise@correio.exemplo", "(11) 90000-2003", "u-igor", -12, {
+        nascimento: "1978-11-25",
+        convenio: "Saúde Mais",
+      }),
+    ],
+    items: [],
+    ...empty(),
+    resources: [
+      {
+        id: "r-helena",
+        name: "Helena Prado",
+        userId: "u-helena",
+        active: true,
+        workHours: {
+          "1": [
+            ["08:00", "12:00"],
+            ["13:00", "19:00"],
+          ],
+          "2": [
+            ["08:00", "12:00"],
+            ["13:00", "19:00"],
+          ],
+          "3": [
+            ["08:00", "12:00"],
+            ["13:00", "19:00"],
+          ],
+          "4": [
+            ["08:00", "12:00"],
+            ["13:00", "19:00"],
+          ],
+          "5": [
+            ["08:00", "12:00"],
+            ["13:00", "19:00"],
+          ],
+        },
+      },
+      {
+        id: "r-igor",
+        name: "Igor Batista",
+        userId: "u-igor",
+        active: true,
+        workHours: { "2": [["09:00", "18:00"]], "4": [["09:00", "18:00"]], "6": [["09:00", "13:00"]] },
+      },
+    ],
+    services: [
+      { id: "s-psico", name: "Sessão de psicoterapia", durationMin: 50, priceCents: 20000, active: true },
+      { id: "s-nutri", name: "Consulta de nutrição", durationMin: 60, priceCents: 25000, active: true },
+      { id: "s-retorno", name: "Retorno de nutrição", durationMin: 30, priceCents: 12000, active: true },
+    ],
+    appointments: [
+      appointment({
+        id: "ag-1",
+        clientId: "p-beatriz",
+        resourceId: "r-helena",
+        serviceId: "s-psico",
+        priceCents: 20000,
+        ...slot(0, 9, 0, 50),
+        status: "confirmado",
+        seriesId: "serie-beatriz",
+        remindedAt: at(-1, 17),
+      }),
+      appointment({
+        id: "ag-2",
+        clientId: "p-caio",
+        resourceId: "r-helena",
+        serviceId: "s-psico",
+        priceCents: 20000,
+        ...slot(0, 10, 0, 50),
+      }),
+      appointment({
+        id: "ag-3",
+        clientId: "p-denise",
+        resourceId: "r-igor",
+        serviceId: "s-nutri",
+        priceCents: 25000,
+        ...slot(0, 14, 0, 60),
+        createdBy: "u-julia",
+      }),
+      appointment({
+        id: "ag-4",
+        clientId: "p-beatriz",
+        resourceId: "r-helena",
+        serviceId: "s-psico",
+        priceCents: 20000,
+        ...slot(7, 9, 0, 50),
+        seriesId: "serie-beatriz",
+      }),
+      appointment({
+        id: "ag-5",
+        clientId: "p-denise",
+        resourceId: "r-igor",
+        serviceId: "s-retorno",
+        priceCents: 12000,
+        ...slot(1, 16, 0, 30),
+        createdBy: "u-julia",
+      }),
+      appointment({
+        id: "ag-6",
+        clientId: "p-caio",
+        resourceId: "r-helena",
+        serviceId: "s-psico",
+        priceCents: 20000,
+        ...slot(1, 10, 0, 50),
+        packageId: "pk-caio",
+      }),
+      appointment({
+        id: "ag-9",
+        clientId: "p-caio",
+        resourceId: "r-helena",
+        serviceId: "s-psico",
+        priceCents: 20000,
+        ...slot(-15, 10, 0, 50),
+        status: "compareceu",
+        packageId: "pk-caio",
+        consumesPackage: true,
+      }),
+      appointment({
+        id: "ag-10",
+        clientId: "p-caio",
+        resourceId: "r-helena",
+        serviceId: "s-psico",
+        priceCents: 20000,
+        ...slot(-8, 10, 0, 50),
+        status: "compareceu",
+        packageId: "pk-caio",
+        consumesPackage: true,
+      }),
+      appointment({
+        id: "ag-7",
+        clientId: "p-caio",
+        resourceId: "r-helena",
+        serviceId: "s-psico",
+        priceCents: 20000,
+        ...slot(-1, 10, 0, 50),
+        status: "compareceu",
+        accountId: "a-atend-caio",
+      }),
+      appointment({
+        id: "ag-8",
+        clientId: "p-denise",
+        resourceId: "r-igor",
+        serviceId: "s-nutri",
+        priceCents: 25000,
+        ...slot(-3, 14, 0, 60),
+        status: "faltou",
+      }),
+    ],
+    accounts: [
+      receivable({
+        id: "a-atend-caio",
+        clientId: "p-caio",
+        description: "Sessão de psicoterapia",
+        origin: "atendimento",
+        amountCents: 20000,
+        dueDate: day(-1),
+        createdAt: at(-1, 11),
+      }),
+      ...buildPlan(180000, 3, day(-16)).map((inst) =>
+        receivable({
+          id: `a-pk-caio-${inst.number}`,
+          clientId: "p-caio",
+          description: "Pacote: 10 sessões de psicoterapia",
+          origin: "pacote",
+          installmentNumber: inst.number,
+          installmentCount: 3,
+          amountCents: inst.amountCents,
+          dueDate: inst.dueDate,
+          createdAt: at(-16),
+          packageId: "pk-caio",
+        }),
+      ),
+      ...subscriptionPeriods(beatrizPlan, today).map((p) =>
+        receivable({
+          id: `a-mens-${p.period}`,
+          clientId: "p-beatriz",
+          description: subscriptionChargeDescription(beatrizPlan.name, p.period),
+          origin: "mensalidade",
+          amountCents: beatrizPlan.amountCents,
+          dueDate: p.dueDate,
+          createdAt: at(-60),
+          subscriptionId: beatrizPlan.id,
+          period: p.period,
+        }),
+      ),
+    ],
+    // a primeira parcela do pacote e a primeira mensalidade já foram pagas
+    movements: [
+      {
+        id: "m-pk-caio-1",
+        accountId: "a-pk-caio-1",
+        direction: "entrada",
+        amountCents: 60000,
+        paidOn: day(-16),
+        method: "pix",
+        registeredBy: "u-ana",
+        createdAt: at(-16, 12),
+        undoneAt: null,
+        undoneBy: null,
+        undoReason: null,
+      },
+      ...subscriptionPeriods(beatrizPlan, today)
+        .slice(0, 1)
+        .map((p) => ({
+          id: `m-mens-${p.period}`,
+          accountId: `a-mens-${p.period}`,
+          direction: "entrada" as const,
+          amountCents: beatrizPlan.amountCents,
+          paidOn: p.dueDate,
+          method: "cartao_credito" as const,
+          registeredBy: "u-ana",
+          createdAt: at(-50),
+          undoneAt: null,
+          undoneBy: null,
+          undoReason: null,
+        })),
+    ],
+    packages: [
+      {
+        id: "pk-caio",
+        clientId: "p-caio",
+        serviceId: "s-psico",
+        itemId: null,
+        name: "10 sessões de psicoterapia",
+        sessionsTotal: 10,
+        priceCents: 180000,
+        validUntil: day(120),
+        closedAt: null,
+        createdAt: at(-16),
+      },
+    ],
+    subscriptions: [beatrizPlan],
+    clinicalNotes: [
+      {
+        id: "cn-1",
+        clientId: "p-caio",
+        appointmentId: "ag-7",
+        authorId: "u-helena",
+        body: "Exemplo fictício: combinamos exercícios de respiração para a semana. Retomar o assunto da escola no próximo encontro.",
+        correctsId: null,
+        createdAt: at(-1, 11),
+      },
+    ],
+  };
+
+  // ---------- Amigo Fiel Pet Shop (ramo: pet shop ou veterinária) ----------
+  const pet: CompanyData = {
+    company: {
+      ...EMPTY_PROFILE,
+      id: PREVIEW_COMPANY_IDS.pet,
+      name: "Amigo Fiel Pet Shop",
+      segment: "pet",
+      phone: "(11) 4002-2020",
+    },
+    members: [
+      { userId: "u-ana", name: "Ana Souza", email: "ana@amigofiel.exemplo", roles: ["admin"] },
+      { userId: "u-karina", name: "Karina Lopes", email: "karina@amigofiel.exemplo", roles: ["recepcao"] },
+      { userId: "u-leandro", name: "Leandro Dias", email: "leandro@amigofiel.exemplo", roles: ["profissional"] },
+      { userId: "u-marcos", name: "Marcos Teles", email: "marcos@amigofiel.exemplo", roles: ["caixa"] },
+    ],
+    clients: [
+      client("t-paula", "Paula Vieira", "paula@correio.exemplo", "(11) 90000-3001", "u-karina", -70, {
+        endereco: "Rua das Acácias, 45, apto 12",
+      }),
+      client("t-rogerio", "Rogério Sato", "", "(11) 90000-3002", "u-karina", -20),
+      client("t-simone", "Simone Barros", "simone@correio.exemplo", "(11) 90000-3003", "u-leandro", -5),
+    ],
+    items: [
+      {
+        id: "i-thor",
+        clientId: "t-paula",
+        kind: "pet",
+        name: "Thor",
+        details: { especie: "Cão", raca: "Golden retriever", porte: "Grande", peso: "32", nascimento: "2021-05-10" },
+        alert: "",
+        active: true,
+        createdAt: at(-70),
+      },
+      {
+        id: "i-mia",
+        clientId: "t-paula",
+        kind: "pet",
+        name: "Mia",
+        details: { especie: "Gato", raca: "Siamês", porte: "Pequeno", peso: "4" },
+        alert: "Assustada: não deixar perto de cães.",
+        active: true,
+        createdAt: at(-40),
+      },
+      {
+        id: "i-bob",
+        clientId: "t-rogerio",
+        kind: "pet",
+        name: "Bob",
+        details: { especie: "Cão", raca: "Shih-tzu", porte: "Pequeno", peso: "6", nascimento: "2012-01-20" },
+        alert: "Idoso e alérgico a perfume.",
+        active: true,
+        createdAt: at(-20),
+      },
+    ],
+    ...empty(),
+    resources: [
+      {
+        id: "r-leandro",
+        name: "Leandro Dias",
+        userId: "u-leandro",
+        active: true,
+        workHours: weekdays([1, 2, 3, 4, 5, 6], [["08:00", "17:00"]]),
+      },
+      // agenda sem login: quem usa a mesa é a tosadora, que não acessa o sistema
+      {
+        id: "r-mesa2",
+        name: "Mesa de tosa 2",
+        userId: null,
+        active: true,
+        workHours: weekdays([2, 3, 4, 5, 6], [["09:00", "18:00"]]),
+      },
+    ],
+    services: [
+      { id: "s-banho-p", name: "Banho (porte pequeno)", durationMin: 60, priceCents: 6000, active: true },
+      { id: "s-banho-g", name: "Banho (porte grande)", durationMin: 90, priceCents: 9000, active: true },
+      { id: "s-tosa", name: "Banho e tosa", durationMin: 120, priceCents: 12000, active: true },
+    ],
+    appointments: [
+      appointment({
+        id: "ag-thor",
+        clientId: "t-paula",
+        resourceId: "r-leandro",
+        serviceId: "s-banho-g",
+        itemId: "i-thor",
+        priceCents: 9000,
+        ...slot(0, 10, 0, 90),
+        createdBy: "u-karina",
+      }),
+      appointment({
+        id: "ag-mia",
+        clientId: "t-paula",
+        resourceId: "r-mesa2",
+        serviceId: "s-banho-p",
+        itemId: "i-mia",
+        priceCents: 6000,
+        ...slot(0, 11, 30, 60),
+        createdBy: "u-karina",
+        notes: "Buscar em casa às 11h.",
+      }),
+      appointment({
+        id: "ag-bob",
+        clientId: "t-rogerio",
+        resourceId: "r-leandro",
+        serviceId: "s-tosa",
+        itemId: "i-bob",
+        priceCents: 12000,
+        ...slot(1, 9, 0, 120),
+        createdBy: "u-karina",
+        packageId: "pk-bob",
+      }),
+    ],
+    clinicalNotes: [],
+    packages: [
+      {
+        id: "pk-bob",
+        clientId: "t-rogerio",
+        serviceId: "s-tosa",
+        itemId: "i-bob",
+        name: "4 banhos e tosa",
+        sessionsTotal: 4,
+        priceCents: 40000,
+        validUntil: day(60),
+        closedAt: null,
+        createdAt: at(-5),
+      },
+    ],
+    accounts: [
+      receivable({
+        id: "a-pk-bob",
+        clientId: "t-rogerio",
+        description: "Pacote: 4 banhos e tosa",
+        origin: "pacote",
+        amountCents: 40000,
+        dueDate: day(-5),
+        createdAt: at(-5),
+        packageId: "pk-bob",
+      }),
+    ],
+    subscriptions: [],
+  };
+
+  // ---------- Studio Bella (ramo: salão, barbearia ou estúdio) ----------
+  // caixa do dia, comissões (40% geral e 50% na barba do Tiago) e agendamento online ligado
+  const lastMonth = addMonths(`${today.slice(0, 7)}-01`, -1);
+  const slotOn = (date: string, hour: number, minute: number, durationMin: number) => {
+    const [y, m, d] = date.split("-").map(Number);
+    const start = new Date(y, m - 1, d, hour, minute, 0);
+    return { startsAt: start.toISOString(), endsAt: new Date(start.getTime() + durationMin * 60_000).toISOString() };
+  };
+  const salonPast: [string, string, string, string, number, number][] = [
+    // id, cliente, agenda, serviço, valor, dia do mês passado
+    ["sb-p1", "b-joana", "r-lucia", "s-corte-f", 9000, 4],
+    ["sb-p2", "b-carla", "r-lucia", "s-escova", 6000, 9],
+    ["sb-p3", "b-joana", "r-lucia", "s-escova", 6000, 18],
+    ["sb-p4", "b-rafael", "r-tiago", "s-corte-m", 4500, 5],
+    ["sb-p5", "b-rafael", "r-tiago", "s-barba", 3500, 5],
+    ["sb-p6", "b-marcos", "r-tiago", "s-corte-m", 4500, 12],
+    ["sb-p7", "b-marcos", "r-tiago", "s-barba", 3500, 22],
+  ];
+  const salao: CompanyData = {
+    company: {
+      ...EMPTY_PROFILE,
+      id: PREVIEW_COMPANY_IDS.salao,
+      name: "Studio Bella",
+      segment: "beleza",
+      phone: "(11) 4002-3030",
+      address: "Av. Presidente Kennedy, 2000 — São Caetano do Sul/SP",
+      brandColor: "#be185d",
+      bookingSlug: "studio-bella",
+      bookingEnabled: true,
+    },
+    members: [
+      { userId: "u-ana", name: "Ana Souza", email: "ana@studiobella.exemplo", roles: ["admin"] },
+      { userId: "u-renata", name: "Renata Lima", email: "renata@studiobella.exemplo", roles: ["recepcao"] },
+      { userId: "u-lucia", name: "Lúcia Prado", email: "lucia@studiobella.exemplo", roles: ["profissional"] },
+      { userId: "u-tiago", name: "Tiago Alves", email: "tiago@studiobella.exemplo", roles: ["profissional"] },
+      { userId: "u-bruna", name: "Bruna Reis", email: "bruna@studiobella.exemplo", roles: ["caixa"] },
+    ],
+    clients: [
+      client("b-carla", "Carla Mendonça", "", "(11) 90000-4001", "u-renata", -90, {
+        preferencias: "Alergia a amônia.",
+      }),
+      client("b-joana", "Joana Ribeiro", "joana@correio.exemplo", "(11) 90000-4002", "u-lucia", -120),
+      client("b-rafael", "Rafael Souza", "", "(11) 90000-4003", "u-tiago", -60),
+      client("b-marcos", "Marcos Lima", "", "(11) 90000-4004", "u-tiago", -45),
+    ],
+    items: [],
+    ...empty(),
+    resources: [
+      {
+        id: "r-lucia",
+        name: "Lúcia Prado",
+        userId: "u-lucia",
+        active: true,
+        workHours: weekdays([2, 3, 4, 5, 6], [["09:00", "19:00"]]),
+      },
+      {
+        id: "r-tiago",
+        name: "Tiago Alves",
+        userId: "u-tiago",
+        active: true,
+        workHours: weekdays([2, 3, 4, 5, 6], [["10:00", "20:00"]]),
+      },
+    ],
+    services: [
+      { id: "s-corte-f", name: "Corte feminino", durationMin: 60, priceCents: 9000, active: true },
+      { id: "s-escova", name: "Escova", durationMin: 45, priceCents: 6000, active: true },
+      { id: "s-corte-m", name: "Corte masculino", durationMin: 30, priceCents: 4500, active: true },
+      { id: "s-barba", name: "Barba", durationMin: 30, priceCents: 3500, active: true },
+    ],
+    products: [
+      { id: "pr-shampoo", name: "Shampoo profissional", priceCents: 4500, active: true },
+      { id: "pr-pomada", name: "Pomada modeladora", priceCents: 3800, active: true },
+    ],
+    commissionRules: [
+      { id: "cr-geral", resourceId: null, serviceId: null, percentBp: 4000, fixedCents: null },
+      { id: "cr-tiago-barba", resourceId: "r-tiago", serviceId: "s-barba", percentBp: 5000, fixedCents: null },
+    ],
+    blocks: [
+      {
+        id: "bl-tiago",
+        resourceId: "r-tiago",
+        ...slot(1, 12, 0, 120),
+        reason: "Curso de barbearia",
+        createdBy: "u-ana",
+      },
+    ],
+    appointments: [
+      appointment({
+        id: "sb-1",
+        clientId: "b-joana",
+        resourceId: "r-lucia",
+        serviceId: "s-corte-f",
+        priceCents: 9000,
+        ...slot(0, 10, 0, 60),
+        status: "confirmado",
+      }),
+      appointment({
+        id: "sb-2",
+        clientId: "b-carla",
+        resourceId: "r-lucia",
+        serviceId: "s-escova",
+        priceCents: 6000,
+        ...slot(0, 14, 0, 45),
+        createdBy: "u-renata",
+      }),
+      appointment({
+        id: "sb-3",
+        clientId: "b-rafael",
+        resourceId: "r-tiago",
+        serviceId: "s-corte-m",
+        priceCents: 4500,
+        ...slot(0, 11, 0, 30),
+      }),
+      appointment({
+        id: "sb-4",
+        clientId: "b-marcos",
+        resourceId: "r-tiago",
+        serviceId: "s-barba",
+        priceCents: 3500,
+        ...slot(0, 16, 0, 30),
+        source: "online",
+        notes: "Marcado pelo link por Marcos Lima",
+      }),
+      ...salonPast.map(([id, clientId, resourceId, serviceId, price, dayOfMonth]) =>
+        appointment({
+          id,
+          clientId,
+          resourceId,
+          serviceId,
+          priceCents: price,
+          ...slotOn(addDays(lastMonth, dayOfMonth - 1), 15, 0, 30),
+          status: "compareceu",
+          accountId: `a-${id}`,
+        }),
+      ),
+    ],
+    // atendimentos do mês passado: cobrados e pagos no Pix
+    accounts: salonPast.map(([id, clientId, , serviceId, price, dayOfMonth]) =>
+      receivable({
+        id: `a-${id}`,
+        clientId,
+        description:
+          serviceId === "s-barba"
+            ? "Barba"
+            : serviceId === "s-escova"
+              ? "Escova"
+              : serviceId === "s-corte-m"
+                ? "Corte masculino"
+                : "Corte feminino",
+        origin: "atendimento",
+        amountCents: price,
+        dueDate: addDays(lastMonth, dayOfMonth - 1),
+        createdAt: at(-30),
+      }),
+    ),
+    movements: salonPast.map(([id, , , , price, dayOfMonth]) => ({
+      id: `m-${id}`,
+      accountId: `a-${id}`,
+      direction: "entrada" as const,
+      amountCents: price,
+      paidOn: addDays(lastMonth, dayOfMonth - 1),
+      method: "pix" as const,
+      registeredBy: "u-renata",
+      createdAt: at(-30),
+      undoneAt: null,
+      undoneBy: null,
+      undoReason: null,
+    })),
+  };
+
+  // ---------- Equilíbrio Pilates (ramo: aulas e turmas) ----------
+  const students: [string, string][] = [
+    ["al-1", "Aline Duarte"],
+    ["al-2", "Bruno Teixeira"],
+    ["al-3", "Cecília Andrade"],
+    ["al-4", "Davi Moreira"],
+    ["al-5", "Elisa Fontes"],
+    ["al-6", "Fábio Nogueira"],
+  ];
+  const pilatesClasses = [
+    {
+      id: "tu-ini",
+      name: "Pilates iniciante",
+      resourceId: "r-diego",
+      weekdays: [1, 3],
+      startTime: "18:00",
+      durationMin: 60,
+      capacity: 6,
+      active: true,
+    },
+    {
+      id: "tu-av",
+      name: "Pilates avançado",
+      resourceId: "r-diego",
+      weekdays: [2, 4],
+      startTime: "07:00",
+      durationMin: 60,
+      capacity: 5,
+      active: true,
+    },
+  ];
+  const pilatesEnroll = [
+    { id: "mt-1", classId: "tu-ini", clientId: "al-1", startedOn: day(-60), endedOn: null },
+    { id: "mt-2", classId: "tu-ini", clientId: "al-2", startedOn: day(-60), endedOn: null },
+    { id: "mt-3", classId: "tu-ini", clientId: "al-3", startedOn: day(-60), endedOn: null },
+    { id: "mt-4", classId: "tu-ini", clientId: "al-4", startedOn: day(-40), endedOn: null },
+    { id: "mt-5", classId: "tu-av", clientId: "al-5", startedOn: day(-45), endedOn: null },
+    { id: "mt-6", classId: "tu-av", clientId: "al-6", startedOn: day(-45), endedOn: null },
+  ];
+  // presença das últimas 3 semanas; a Cecília (al-3) parou de vir e o Davi faltou uma vez
+  const pilatesAttendance = pilatesClasses.flatMap((c) =>
+    classDates(c, day(-21), day(-1)).flatMap((date) =>
+      pilatesEnroll
+        .filter((e) => e.classId === c.id && e.clientId !== "al-3")
+        .map((e, i) => ({
+          id: `pr-${c.id}-${e.clientId}-${date}`,
+          classId: c.id,
+          clientId: e.clientId,
+          classDate: date,
+          status: (e.clientId === "al-4" && i === 3 && date === classDates(c, day(-21), day(-1))[0]
+            ? "falta"
+            : "presente") as "falta" | "presente",
+        })),
+    ),
+  );
+  const pilatesPlans: Subscription[] = students.map(([clientId], i) => ({
+    id: `sub-${clientId}`,
+    clientId,
+    name: clientId === "al-5" || clientId === "al-6" ? "Pilates avançado 2x por semana" : "Pilates 2x por semana",
+    amountCents: 28000,
+    dayOfMonth: 5,
+    startsOn: day(-60 + i),
+    endsOn: null,
+    canceledAt: null,
+    createdAt: at(-60 + i),
+  }));
+  const pilatesCharges = pilatesPlans.flatMap((sub) =>
+    subscriptionPeriods(sub, today).map((p) =>
+      receivable({
+        id: `a-${sub.id}-${p.period}`,
+        clientId: sub.clientId,
+        description: subscriptionChargeDescription(sub.name, p.period),
+        origin: "mensalidade",
+        amountCents: sub.amountCents,
+        dueDate: p.dueDate,
+        createdAt: at(-55),
+        subscriptionId: sub.id,
+        period: p.period,
+      }),
+    ),
+  );
+  const pilates: CompanyData = {
+    company: {
+      ...EMPTY_PROFILE,
+      id: PREVIEW_COMPANY_IDS.pilates,
+      name: "Equilíbrio Pilates",
+      segment: "turmas",
+      phone: "(11) 4002-4040",
+      brandColor: "#0f766e",
+    },
+    members: [
+      { userId: "u-ana", name: "Ana Souza", email: "ana@equilibrio.exemplo", roles: ["admin"] },
+      { userId: "u-carla2", name: "Carla Nunes", email: "carla@equilibrio.exemplo", roles: ["recepcao"] },
+      { userId: "u-diego2", name: "Diego Faria", email: "diego@equilibrio.exemplo", roles: ["profissional"] },
+    ],
+    clients: students.map(([id, name], i) =>
+      client(id, name, "", `(11) 90000-50${String(i + 1).padStart(2, "0")}`, "u-carla2", -60),
+    ),
+    items: [],
+    ...empty(),
+    resources: [
+      {
+        id: "r-diego",
+        name: "Diego Faria",
+        userId: "u-diego2",
+        active: true,
+        workHours: weekdays([1, 2, 3, 4, 5], [["06:00", "21:00"]]),
+      },
+    ],
+    services: [{ id: "s-aula-exp", name: "Aula experimental", durationMin: 60, priceCents: 0, active: true }],
+    classes: pilatesClasses,
+    enrollments: pilatesEnroll,
+    attendance: pilatesAttendance,
+    subscriptions: pilatesPlans,
+    accounts: pilatesCharges,
+    // todas pagas, menos as do Fábio (al-6)
+    movements: pilatesCharges
+      .filter((a) => a.clientId !== "al-6" && a.dueDate < today)
+      .map((a) => ({
+        id: `m-${a.id}`,
+        accountId: a.id,
+        direction: "entrada" as const,
+        amountCents: a.amountCents,
+        paidOn: a.dueDate,
+        method: "cartao_credito" as const,
+        registeredBy: "u-carla2",
+        createdAt: at(-30),
+        undoneAt: null,
+        undoneBy: null,
+        undoReason: null,
+      })),
+  };
+
+  // ---------- Auto Center Kennedy (ramo: oficina) ----------
+  const drivers: [string, string, string][] = [
+    ["ve-1", "Gustavo Lima", "(11) 90000-6001"],
+    ["ve-2", "Helena Prado", "(11) 90000-6002"],
+    ["ve-3", "Ivo Martins", "(11) 90000-6003"],
+    ["ve-4", "Juliana Rocha", "(11) 90000-6004"],
+    ["ve-5", "Kléber Souza", "(11) 90000-6005"],
+    ["ve-6", "Larissa Melo", "(11) 90000-6006"],
+  ];
+  const vehicle = (id: string, clientId: string, name: string, plate: string, details: Record<string, string>) => ({
+    id,
+    clientId,
+    kind: "veiculo" as const,
+    name,
+    plate,
+    details,
+    alert: "",
+    active: true,
+    createdAt: at(-90),
+  });
+  const vehicles = [
+    vehicle("v-1", "ve-1", "Onix LT", "FHK2B31", {
+      marca: "Chevrolet",
+      ano: "2020",
+      cor: "Prata",
+      combustivel: "Flex",
+    }),
+    vehicle("v-2", "ve-2", "HB20 1.0", "QWE4521", {
+      marca: "Hyundai",
+      ano: "2019",
+      cor: "Branco",
+      combustivel: "Flex",
+    }),
+    vehicle("v-3", "ve-3", "Strada Freedom", "GTR8C14", {
+      marca: "Fiat",
+      ano: "2022",
+      cor: "Vermelha",
+      combustivel: "Flex",
+    }),
+    vehicle("v-4", "ve-4", "Gol 1.6", "DKP3390", {
+      marca: "Volkswagen",
+      ano: "2015",
+      cor: "Preto",
+      combustivel: "Flex",
+    }),
+    vehicle("v-5", "ve-5", "Corolla XEi", "RNB7E62", {
+      marca: "Toyota",
+      ano: "2021",
+      cor: "Cinza",
+      combustivel: "Flex",
+    }),
+    vehicle("v-6", "ve-6", "Kwid Zen", "JLM5A08", {
+      marca: "Renault",
+      ano: "2023",
+      cor: "Branco",
+      combustivel: "Flex",
+    }),
+  ];
+  const wo = (
+    p: Pick<WorkOrder, "id" | "number" | "clientId" | "itemId" | "resourceId" | "stage"> & Partial<WorkOrder>,
+  ): WorkOrder => ({
+    complaint: "",
+    diagnosis: "",
+    km: null,
+    fuel: null,
+    checklist: [],
+    promisedOn: null,
+    discountCents: 0,
+    shareToken: null,
+    sentAt: null,
+    approvedAt: null,
+    approvedByName: null,
+    approvalChannel: null,
+    deliveredAt: null,
+    totalCents: null,
+    canceledAt: null,
+    cancelReason: null,
+    nextServiceOn: null,
+    nextServiceNote: "",
+    createdBy: "u-paula",
+    createdAt: at(-1, 8),
+    ...p,
+  });
+  const woItem = (
+    id: string,
+    workOrderId: string,
+    kind: "peca" | "servico",
+    description: string,
+    unitCents: number,
+    status: WorkOrderItem["status"],
+    extra: Partial<WorkOrderItem> = {},
+  ): WorkOrderItem => ({
+    id,
+    workOrderId,
+    kind,
+    serviceId: null,
+    description,
+    quantity: 1,
+    unitCents,
+    warrantyDays: null,
+    status,
+    addedBy: "u-paula",
+    createdAt: at(-1, 9),
+    ...extra,
+  });
+  const workOrders: WorkOrder[] = [
+    wo({
+      id: "os-1",
+      number: 1,
+      clientId: "ve-4",
+      itemId: "v-4",
+      resourceId: "r-rogerio",
+      stage: "entregue",
+      complaint: "Troca de óleo e filtro",
+      km: 98200,
+      fuel: "1/2",
+      createdAt: at(-21, 8),
+      sentAt: at(-21, 10),
+      approvedAt: at(-21, 11),
+      approvedByName: "Juliana Rocha",
+      approvalChannel: "presencial",
+      deliveredAt: at(-20, 17),
+      totalCents: 28500,
+      nextServiceOn: day(5),
+      nextServiceNote: "Troca de óleo",
+    }),
+    wo({
+      id: "os-2",
+      number: 2,
+      clientId: "ve-5",
+      itemId: "v-5",
+      resourceId: "r-sergio",
+      stage: "entregue",
+      complaint: "Freio fazendo barulho ao frear",
+      diagnosis: "Pastilhas dianteiras no fim. Discos dentro da medida.",
+      km: 41500,
+      fuel: "3/4",
+      createdAt: at(-4, 8),
+      sentAt: at(-4, 11),
+      approvedAt: at(-4, 12),
+      approvedByName: "Kléber Souza",
+      approvalChannel: "link",
+      deliveredAt: at(-3, 17),
+      totalCents: 50000,
+      nextServiceOn: day(180),
+      nextServiceNote: "Revisão dos freios",
+    }),
+    wo({
+      id: "os-3",
+      number: 3,
+      clientId: "ve-1",
+      itemId: "v-1",
+      resourceId: "r-rogerio",
+      stage: "servico",
+      complaint: "Barulho na suspensão dianteira em buracos",
+      diagnosis: "Bieletas da barra estabilizadora com folga.",
+      km: 52300,
+      fuel: "1/4",
+      checklist: ["Estepe", "Documento do veículo"],
+      promisedOn: today,
+      shareToken: "a1b2c3d4-0000-4000-8000-000000000003",
+      sentAt: at(-1, 14),
+      approvedAt: at(-1, 16),
+      approvedByName: "Gustavo Lima",
+      approvalChannel: "link",
+    }),
+    wo({
+      id: "os-4",
+      number: 4,
+      clientId: "ve-2",
+      itemId: "v-2",
+      resourceId: "r-sergio",
+      stage: "aprovacao",
+      complaint: "Luz da injeção acesa no painel",
+      diagnosis: "Scanner indicou sonda lambda com defeito (código P0133).",
+      km: 67800,
+      fuel: "1/2",
+      checklist: ["Estepe", "Macaco e chave de roda"],
+      promisedOn: day(1),
+      shareToken: "a1b2c3d4-0000-4000-8000-000000000004",
+      sentAt: at(0, 9),
+      createdAt: at(0, 8),
+    }),
+    wo({
+      id: "os-5",
+      number: 5,
+      clientId: "ve-3",
+      itemId: "v-3",
+      resourceId: "r-rogerio",
+      stage: "orcamento",
+      complaint: "Revisão dos 40 mil km",
+      km: 40210,
+      fuel: "1/2",
+      checklist: ["Estepe", "Documento do veículo", "Tapetes"],
+      promisedOn: day(2),
+      createdAt: at(0, 8),
+    }),
+    wo({
+      id: "os-6",
+      number: 6,
+      clientId: "ve-6",
+      itemId: "v-6",
+      resourceId: "r-lavagem",
+      stage: "pronto",
+      complaint: "Lavagem completa",
+      fuel: "cheio",
+      approvedAt: at(0, 8),
+      approvedByName: "Larissa Melo",
+      approvalChannel: "presencial",
+      createdAt: at(0, 8),
+    }),
+    wo({
+      id: "os-7",
+      number: 7,
+      clientId: "ve-4",
+      itemId: "v-4",
+      resourceId: "r-rogerio",
+      stage: "peca",
+      complaint: "Embreagem patinando na subida",
+      diagnosis: "Disco e platô gastos. Kit de embreagem encomendado no fornecedor.",
+      km: 99100,
+      fuel: "1/4",
+      promisedOn: day(-1),
+      sentAt: at(-3, 10),
+      approvedAt: at(-3, 15),
+      approvedByName: "Juliana Rocha",
+      approvalChannel: "telefone",
+      createdAt: at(-3, 8),
+    }),
+  ];
+  const workOrderItems: WorkOrderItem[] = [
+    woItem("oi-1", "os-1", "peca", "Óleo 5W30 sintético (4 litros)", 18000, "aprovado"),
+    woItem("oi-2", "os-1", "peca", "Filtro de óleo", 4500, "aprovado"),
+    woItem("oi-3", "os-1", "servico", "Troca de óleo e filtro", 6000, "aprovado", { serviceId: "s-oleo" }),
+    woItem("oi-4", "os-2", "peca", "Pastilhas de freio dianteiras", 32000, "aprovado", { warrantyDays: 90 }),
+    woItem("oi-5", "os-2", "servico", "Revisão de freios", 18000, "aprovado", {
+      serviceId: "s-freio",
+      warrantyDays: 90,
+    }),
+    woItem("oi-6", "os-3", "peca", "Bieleta dianteira", 9500, "aprovado", { quantity: 2, warrantyDays: 90 }),
+    woItem("oi-7", "os-3", "servico", "Troca das bieletas", 15000, "aprovado", { serviceId: "s-susp" }),
+    woItem("oi-8", "os-3", "servico", "Alinhamento e balanceamento", 12000, "recusado", { serviceId: "s-alinh" }),
+    woItem("oi-9", "os-4", "peca", "Sonda lambda", 38000, "pendente", { warrantyDays: 90, addedBy: "u-sergio" }),
+    woItem("oi-10", "os-4", "servico", "Diagnóstico eletrônico", 15000, "pendente", { serviceId: "s-diag" }),
+    woItem("oi-11", "os-4", "servico", "Troca da sonda lambda", 9000, "pendente", { serviceId: "s-susp" }),
+    woItem("oi-12", "os-6", "servico", "Lavagem completa", 7000, "aprovado", { serviceId: "s-lav" }),
+    woItem("oi-13", "os-7", "peca", "Kit de embreagem (disco, platô e rolamento)", 89000, "aprovado", {
+      warrantyDays: 180,
+    }),
+    woItem("oi-14", "os-7", "servico", "Troca da embreagem", 35000, "aprovado", {
+      serviceId: "s-embr",
+      warrantyDays: 90,
+    }),
+  ];
+  const woEvents = workOrders.flatMap((w) => {
+    const ev = (n: number, description: string, createdAt: string) => ({
+      id: `oe-${w.id}-${n}`,
+      workOrderId: w.id,
+      description,
+      actorId: "u-paula",
+      createdAt,
+    });
+    const list = [ev(1, "OS aberta", w.createdAt)];
+    if (w.sentAt) list.push(ev(2, "Orçamento enviado ao cliente", w.sentAt));
+    if (w.approvedAt)
+      list.push(
+        ev(
+          3,
+          `Orçamento decidido por ${w.approvedByName} (${{ link: "pelo link", presencial: "na oficina", telefone: "por telefone", whatsapp: "pelo WhatsApp" }[w.approvalChannel!]})`,
+          w.approvedAt,
+        ),
+      );
+    if (w.deliveredAt)
+      list.push(
+        ev(4, `Entregue ao cliente — R$ ${((w.totalCents ?? 0) / 100).toFixed(2).replace(".", ",")}`, w.deliveredAt),
+      );
+    return list;
+  });
+  const oficinaAccounts = [
+    receivable({
+      id: "a-os-1",
+      clientId: "ve-4",
+      description: "OS nº 1 — DKP-3390",
+      origin: "os",
+      amountCents: 28500,
+      dueDate: day(-20),
+      createdAt: at(-20, 17),
+      workOrderId: "os-1",
+    }),
+    receivable({
+      id: "a-os-2",
+      clientId: "ve-5",
+      description: "OS nº 2 — RNB7E62",
+      origin: "os",
+      amountCents: 50000,
+      dueDate: day(7),
+      createdAt: at(-3, 17),
+      workOrderId: "os-2",
+    }),
+  ];
+  const oficina: CompanyData = {
+    company: {
+      ...EMPTY_PROFILE,
+      id: PREVIEW_COMPANY_IDS.oficina,
+      name: "Auto Center Kennedy",
+      segment: "veiculos",
+      phone: "(11) 4002-6060",
+      address: "Av. Presidente Kennedy, 1500 — São Caetano do Sul",
+      brandColor: "#b45309",
+    },
+    members: [
+      { userId: "u-ana", name: "Ana Souza", email: "ana@autocenter.exemplo", roles: ["admin"] },
+      { userId: "u-paula", name: "Paula Ribeiro", email: "paula@autocenter.exemplo", roles: ["recepcao"] },
+      { userId: "u-rogerio", name: "Rogério Alves", email: "rogerio@autocenter.exemplo", roles: ["profissional"] },
+      { userId: "u-sergio", name: "Sérgio Dias", email: "sergio@autocenter.exemplo", roles: ["profissional"] },
+      { userId: "u-vitor", name: "Vítor Campos", email: "vitor@autocenter.exemplo", roles: ["financeiro"] },
+    ],
+    clients: drivers.map(([id, name, phone]) => client(id, name, "", phone, "u-paula", -90)),
+    items: vehicles,
+    ...empty(),
+    resources: [
+      { id: "r-rogerio", name: "Rogério Alves", userId: "u-rogerio", active: true, workHours: {} },
+      { id: "r-sergio", name: "Sérgio Dias", userId: "u-sergio", active: true, workHours: {} },
+      { id: "r-lavagem", name: "Lava-rápido", userId: null, active: true, workHours: {} },
+    ],
+    services: [
+      { id: "s-oleo", name: "Troca de óleo e filtro", durationMin: 30, priceCents: 6000, active: true },
+      { id: "s-freio", name: "Revisão de freios", durationMin: 90, priceCents: 18000, active: true },
+      { id: "s-alinh", name: "Alinhamento e balanceamento", durationMin: 60, priceCents: 12000, active: true },
+      { id: "s-diag", name: "Diagnóstico eletrônico", durationMin: 45, priceCents: 15000, active: true },
+      { id: "s-susp", name: "Mão de obra de suspensão", durationMin: 60, priceCents: 15000, active: true },
+      { id: "s-embr", name: "Troca de embreagem", durationMin: 240, priceCents: 35000, active: true },
+      { id: "s-lav", name: "Lavagem completa", durationMin: 60, priceCents: 7000, active: true },
+    ],
+    commissionRules: [
+      { id: "cr-geral", resourceId: null, serviceId: null, percentBp: 3000, fixedCents: null },
+      { id: "cr-lav", resourceId: "r-lavagem", serviceId: null, percentBp: 2000, fixedCents: null },
+    ],
+    workOrders,
+    workOrderItems,
+    workOrderEvents: woEvents,
+    workOrderPhotos: [],
+    stockMovements: [],
+    counterSales: [],
+    orders: [],
+    orderItems: [],
+    orderEvents: [],
+    prescriptions: [],
+    accounts: oficinaAccounts,
+    movements: [
+      {
+        id: "m-os-1",
+        accountId: "a-os-1",
+        direction: "entrada",
+        amountCents: 28500,
+        paidOn: day(-20),
+        method: "pix",
+        registeredBy: "u-vitor",
+        createdAt: at(-20, 17),
+        undoneAt: null,
+        undoneBy: null,
+        undoReason: null,
+      },
+    ],
+  };
+
+  // ---------- Kennedy Autopeças (ramo: loja e venda no balcão) ----------
+  type ShopProduct = Product & { sold: number };
+  const part = (
+    id: string,
+    name: string,
+    sku: string,
+    priceCents: number,
+    costCents: number,
+    stock: number,
+    minStock: number,
+    extra: Partial<Product> & { sold?: number } = {},
+  ): ShopProduct => ({
+    id,
+    name,
+    sku,
+    barcode: null,
+    priceCents,
+    costCents,
+    trackStock: true,
+    stockQty: stock,
+    minStock,
+    size: "",
+    color: "",
+    fits: "",
+    active: true,
+    sold: 0,
+    ...extra,
+  });
+  const parts: ShopProduct[] = [
+    part("pa-1", "Óleo 5W30 sintético 1L", "OL5W30", 4990, 3100, 22, 10, {
+      barcode: "7891000100015",
+      fits: "Uso geral (motores flex)",
+      sold: 2,
+    }),
+    part("pa-2", "Filtro de óleo PSL55", "PSL55", 3290, 1800, 3, 5, {
+      barcode: "7891000100022",
+      fits: "Gol, Voyage, Fox 1.0 e 1.6 (2008 a 2016)",
+      sold: 3,
+    }),
+    part("pa-3", "Pastilha de freio dianteira HQ-2045", "HQ2045", 12900, 7400, 5, 4, {
+      barcode: "7891000100039",
+      fits: "Onix, Prisma 1.0 e 1.4 (2013 a 2019)",
+      sold: 3,
+    }),
+    part("pa-4", 'Palheta do limpador 20"', "PL20", 3990, 1900, 0, 6, { barcode: "7891000100046", fits: "Universal" }),
+    part("pa-5", "Lâmpada H4 12V", "H4-12", 2490, 1100, 15, 5, { fits: "Gol, Palio, Uno, Celta" }),
+    part("pa-6", "Aditivo para radiador 1L", "ADR1", 2990, 1500, 12, 4),
+    part("pa-7", "Camiseta Kennedy Autopeças", "CAM-P", 4500, 2000, 5, 0, { size: "P", color: "Preta" }),
+    part("pa-8", "Camiseta Kennedy Autopeças", "CAM-M", 4500, 2000, 2, 0, { size: "M", color: "Preta" }),
+    part("pa-9", "Camiseta Kennedy Autopeças", "CAM-G", 4500, 2000, 0, 0, { size: "G", color: "Preta" }),
+  ];
+  const shopClients = [
+    { ...client("ka-1", "Oficina do Zé", "", "(11) 90000-7001", "u-joana", -120), creditLimitCents: 300000 },
+    { ...client("ka-2", "Rita Campos", "", "(11) 90000-7002", "u-joana", -90), creditLimitCents: 50000 },
+    { ...client("ka-3", "Paulo Mendes", "", "(11) 90000-7003", "u-joana", -30), creditLimitCents: null },
+  ];
+  const shopSessions = [
+    {
+      id: "cx-ka-old",
+      openedBy: "u-celso",
+      openedAt: at(-40, 8),
+      openingCents: 10000,
+      closedBy: "u-marta",
+      closedAt: at(-40, 19),
+      expectedCents: 10000,
+      countedCents: 10000,
+      notes: "",
+    },
+    {
+      id: "cx-ka-hoje",
+      openedBy: "u-celso",
+      openedAt: at(0, 8),
+      openingCents: 15000,
+      closedBy: null,
+      closedAt: null,
+      expectedCents: null,
+      countedCents: null,
+      notes: "",
+    },
+  ];
+  const sale = (
+    id: string,
+    sessionId: string,
+    clientId: string | null,
+    subtotal: number,
+    discount: number,
+    payment: "avista" | "crediario",
+    method: CounterSale["method"],
+    createdAt: string,
+  ): CounterSale => ({
+    id,
+    sessionId,
+    clientId,
+    subtotalCents: subtotal,
+    discountCents: discount,
+    totalCents: subtotal - discount,
+    payment,
+    method,
+    createdBy: payment === "crediario" ? "u-joana" : "u-celso",
+    createdAt,
+  });
+  const counterSales: CounterSale[] = [
+    sale("vs-1", "cx-ka-hoje", null, 9980, 0, "avista", "pix", at(0, 9)),
+    sale("vs-2", "cx-ka-hoje", "ka-3", 12900, 900, "avista", "dinheiro", at(0, 10)),
+    sale("vs-3", "cx-ka-old", "ka-1", 60000, 0, "crediario", null, at(-40, 11)),
+    sale("vs-4", "cx-ka-old", "ka-2", 25800, 0, "crediario", null, at(-40, 15)),
+  ];
+  const shopAccounts: Account[] = [
+    receivable({
+      id: "a-vs-1",
+      clientId: null,
+      description: "Venda no caixa: Óleo 5W30 sintético 1L",
+      origin: "caixa",
+      amountCents: 9980,
+      dueDate: today,
+      createdAt: at(0, 9),
+      counterSaleId: "vs-1",
+    }),
+    receivable({
+      id: "a-vs-2",
+      clientId: "ka-3",
+      description: "Venda no caixa: Pastilha de freio dianteira HQ-2045",
+      origin: "caixa",
+      amountCents: 12000,
+      dueDate: today,
+      createdAt: at(0, 10),
+      counterSaleId: "vs-2",
+    }),
+    ...[day(-10), day(20), day(50)].map((due, i) =>
+      receivable({
+        id: `a-vs-3-${i + 1}`,
+        clientId: "ka-1",
+        description: "Crediário: Filtro de óleo PSL55 e mais 1",
+        origin: "crediario",
+        amountCents: 20000,
+        dueDate: due,
+        installmentNumber: i + 1,
+        installmentCount: 3,
+        createdAt: at(-40, 11),
+        counterSaleId: "vs-3",
+      }),
+    ),
+    ...[day(-25), day(5)].map((due, i) =>
+      receivable({
+        id: `a-vs-4-${i + 1}`,
+        clientId: "ka-2",
+        description: "Crediário: Pastilha de freio dianteira HQ-2045",
+        origin: "crediario",
+        amountCents: 12900,
+        dueDate: due,
+        installmentNumber: i + 1,
+        installmentCount: 2,
+        createdAt: at(-40, 15),
+        counterSaleId: "vs-4",
+      }),
+    ),
+  ];
+  const shopItems = [
+    {
+      id: "si-1",
+      accountId: "a-vs-1",
+      saleId: "vs-1",
+      productId: "pa-1",
+      serviceId: null,
+      description: "Óleo 5W30 sintético 1L",
+      quantity: 2,
+      unitCents: 4990,
+      returnedQty: 0,
+    },
+    {
+      id: "si-2",
+      accountId: "a-vs-2",
+      saleId: "vs-2",
+      productId: "pa-3",
+      serviceId: null,
+      description: "Pastilha de freio dianteira HQ-2045",
+      quantity: 1,
+      unitCents: 12900,
+      returnedQty: 0,
+    },
+    {
+      id: "si-3",
+      accountId: "a-vs-3-1",
+      saleId: "vs-3",
+      productId: "pa-2",
+      serviceId: null,
+      description: "Filtro de óleo PSL55",
+      quantity: 3,
+      unitCents: 3290,
+      returnedQty: 0,
+    },
+    {
+      id: "si-4",
+      accountId: "a-vs-3-1",
+      saleId: "vs-3",
+      productId: null,
+      serviceId: null,
+      description: "Kit de embreagem (encomenda)",
+      quantity: 1,
+      unitCents: 50130,
+      returnedQty: 0,
+    },
+    {
+      id: "si-5",
+      accountId: "a-vs-4-1",
+      saleId: "vs-4",
+      productId: "pa-3",
+      serviceId: null,
+      description: "Pastilha de freio dianteira HQ-2045",
+      quantity: 2,
+      unitCents: 12900,
+      returnedQty: 0,
+    },
+  ];
+  const shopStock = [
+    ...parts.map((p) => ({
+      id: `sm-in-${p.id}`,
+      productId: p.id,
+      kind: "entrada" as const,
+      quantity: (p.stockQty ?? 0) + p.sold || 1,
+      unitCostCents: p.costCents ?? null,
+      saleId: null,
+      reason: "Estoque inicial",
+      createdBy: "u-marta",
+      createdAt: at(-60, 9),
+    })),
+    // camiseta G e palheta: entraram 1 e saiu 1 como perda (para o saldo ficar zero, como nas vendas reais)
+    ...parts
+      .filter((p) => (p.stockQty ?? 0) + p.sold === 0)
+      .map((p) => ({
+        id: `sm-loss-${p.id}`,
+        productId: p.id,
+        kind: "perda" as const,
+        quantity: -1,
+        unitCostCents: null,
+        saleId: null,
+        reason: "Avaria",
+        createdBy: "u-marta",
+        createdAt: at(-20, 9),
+      })),
+    ...shopItems
+      .filter((i) => i.productId)
+      .map((i) => ({
+        id: `sm-${i.id}`,
+        productId: i.productId!,
+        kind: "venda" as const,
+        quantity: -i.quantity,
+        unitCostCents: null,
+        saleId: i.saleId,
+        reason: "",
+        createdBy: "u-celso",
+        createdAt: counterSales.find((v) => v.id === i.saleId)!.createdAt,
+      })),
+  ];
+  const loja: CompanyData = {
+    company: {
+      ...EMPTY_PROFILE,
+      id: PREVIEW_COMPANY_IDS.autopecas,
+      name: "Kennedy Autopeças",
+      segment: "balcao",
+      phone: "(11) 4002-7070",
+      address: "Av. Presidente Kennedy, 2100 — São Caetano do Sul",
+      brandColor: "#1d4ed8",
+    },
+    members: [
+      { userId: "u-ana", name: "Ana Souza", email: "ana@kennedypecas.exemplo", roles: ["admin"] },
+      { userId: "u-joana", name: "Joana Lopes", email: "joana@kennedypecas.exemplo", roles: ["vendedor"] },
+      { userId: "u-celso", name: "Celso Prado", email: "celso@kennedypecas.exemplo", roles: ["caixa"] },
+      { userId: "u-marta", name: "Marta Reis", email: "marta@kennedypecas.exemplo", roles: ["financeiro"] },
+    ],
+    clients: shopClients,
+    items: [],
+    ...empty(),
+    resources: [],
+    services: [],
+    products: parts.map(({ sold: _sold, ...p }) => p),
+    stockMovements: shopStock,
+    counterSales,
+    cashSessions: shopSessions,
+    cashSaleItems: shopItems,
+    accounts: shopAccounts,
+    movements: [
+      ["a-vs-1", 9980, "pix", at(0, 9), "cx-ka-hoje"],
+      ["a-vs-2", 12000, "dinheiro", at(0, 10), "cx-ka-hoje"],
+      ["a-vs-4-1", 12900, "pix", at(-25, 10), null],
+    ].map(([accountId, amountCents, method, createdAt, cashSessionId]) => ({
+      id: `m-${accountId}`,
+      accountId: accountId as string,
+      direction: "entrada" as const,
+      amountCents: amountCents as number,
+      paidOn: (createdAt as string).slice(0, 10),
+      method: method as Movement["method"],
+      registeredBy: "u-celso",
+      createdAt: createdAt as string,
+      undoneAt: null,
+      undoneBy: null,
+      undoReason: null,
+      cashSessionId: cashSessionId as string | null,
+    })),
+  };
+
+  // ---------- Ótica Kennedy (ramo: pedidos com prazo) ----------
+  const frames: Product[] = [
+    {
+      id: "ar-1",
+      name: "Armação acetato preta",
+      sku: "AC-01",
+      barcode: "7892000100018",
+      priceCents: 29000,
+      costCents: 12000,
+      trackStock: true,
+      stockQty: 4,
+      minStock: 2,
+      size: "",
+      color: "Preta",
+      fits: "",
+      active: true,
+    },
+    {
+      id: "ar-2",
+      name: "Armação metal dourada",
+      sku: "MT-07",
+      barcode: "7892000100025",
+      priceCents: 34000,
+      costCents: 15000,
+      trackStock: true,
+      stockQty: 1,
+      minStock: 2,
+      size: "",
+      color: "Dourada",
+      fits: "",
+      active: true,
+    },
+    {
+      id: "ar-3",
+      name: "Par de lentes com antirreflexo",
+      sku: "LT-AR",
+      barcode: null,
+      priceCents: 38000,
+      costCents: 16000,
+      trackStock: false,
+      stockQty: 0,
+      minStock: 0,
+      size: "",
+      color: "",
+      fits: "",
+      active: true,
+    },
+    {
+      id: "ar-4",
+      name: "Estojo e flanela",
+      sku: "EST-1",
+      barcode: null,
+      priceCents: 2500,
+      costCents: 600,
+      trackStock: true,
+      stockQty: 30,
+      minStock: 10,
+      size: "",
+      color: "",
+      fits: "",
+      active: true,
+    },
+  ];
+  const opticClients = [
+    client("ot-1", "Beatriz Nunes", "", "(11) 90000-8001", "u-lia", -200),
+    client("ot-2", "Carlos Eduardo Pires", "", "(11) 90000-8002", "u-lia", -380),
+    client("ot-3", "Denise Alves", "", "(11) 90000-8003", "u-lia", -420),
+    client("ot-4", "Eduarda Lima", "", "(11) 90000-8004", "u-lia", -30),
+  ];
+  const eye = (
+    sph: number | null,
+    cyl: number | null = null,
+    axis: number | null = null,
+    add: number | null = null,
+  ) => ({ sph, cyl, axis, add });
+  const rx = (
+    id: string,
+    clientId: string,
+    examined: number,
+    valid: number,
+    od: ReturnType<typeof eye>,
+    oe: ReturnType<typeof eye>,
+  ) => ({
+    id,
+    clientId,
+    examinedOn: day(examined),
+    validUntil: day(valid),
+    doctor: "Dr. Henrique Moraes (CRM 00000)",
+    od,
+    oe,
+    dnpOd: 31.5,
+    dnpOe: 32,
+    notes: "",
+    createdBy: "u-lia",
+    createdAt: at(examined, 11),
+  });
+  const prescriptions = [
+    rx("rx-1", "ot-1", -20, 345, eye(-1.25, -0.5, 180, 2), eye(-1, -0.75, 170, 2)),
+    rx("rx-2", "ot-2", -350, 15, eye(2.5), eye(2.25, -0.25, 90)),
+    rx("rx-3", "ot-3", -400, -35, eye(-3, -1, 10), eye(-2.75, -1.25, 175)),
+    rx("rx-4", "ot-4", -15, 350, eye(-0.75), eye(-0.5)),
+  ];
+  const order = (
+    p: Pick<Order, "id" | "number" | "clientId" | "title" | "stage" | "promisedOn" | "totalCents" | "downCents"> &
+      Partial<Order>,
+  ): Order => ({
+    resourceId: "r-otavio",
+    prescriptionId: null,
+    details: "",
+    readyAt: null,
+    deliveredAt: null,
+    canceledAt: null,
+    cancelReason: null,
+    createdBy: "u-lia",
+    createdAt: at(-1, 10),
+    ...p,
+  });
+  const orders: Order[] = [
+    order({
+      id: "pd-1",
+      number: 1,
+      clientId: "ot-4",
+      title: "Óculos de grau completo",
+      stage: "entregue",
+      promisedOn: day(-6),
+      totalCents: 69500,
+      downCents: 30000,
+      prescriptionId: "rx-4",
+      createdAt: at(-14, 10),
+      readyAt: at(-7, 15),
+      deliveredAt: at(-5, 11),
+    }),
+    order({
+      id: "pd-2",
+      number: 2,
+      clientId: "ot-1",
+      title: "Óculos multifocal",
+      details: "Lentes multifocais com antirreflexo. Armação acetato preta.",
+      stage: "terceiro",
+      promisedOn: day(-1),
+      totalCents: 69500,
+      downCents: 30000,
+      prescriptionId: "rx-1",
+      createdAt: at(-8, 10),
+    }),
+    order({
+      id: "pd-3",
+      number: 3,
+      clientId: "ot-2",
+      title: "Troca de lentes",
+      stage: "pronto",
+      promisedOn: today,
+      totalCents: 38000,
+      downCents: 0,
+      prescriptionId: "rx-2",
+      createdAt: at(-4, 16),
+      readyAt: at(0, 9),
+    }),
+    order({
+      id: "pd-4",
+      number: 4,
+      clientId: "ot-3",
+      title: "Conserto da haste",
+      details: "Haste esquerda solta; trocar parafuso e ajustar.",
+      stage: "recebido",
+      promisedOn: day(2),
+      totalCents: 4000,
+      downCents: 0,
+      createdAt: at(0, 9),
+    }),
+    order({
+      id: "pd-5",
+      number: 5,
+      clientId: "ot-4",
+      title: "Óculos de sol com grau",
+      stage: "producao",
+      promisedOn: day(5),
+      totalCents: 66500,
+      downCents: 20000,
+      prescriptionId: "rx-4",
+      createdAt: at(0, 10),
+    }),
+  ];
+  const orderItems = [
+    {
+      id: "pi-1",
+      orderId: "pd-1",
+      productId: "ar-1",
+      description: "Armação acetato preta",
+      quantity: 1,
+      unitCents: 29000,
+    },
+    {
+      id: "pi-2",
+      orderId: "pd-1",
+      productId: "ar-3",
+      description: "Par de lentes com antirreflexo",
+      quantity: 1,
+      unitCents: 38000,
+    },
+    { id: "pi-3", orderId: "pd-1", productId: "ar-4", description: "Estojo e flanela", quantity: 1, unitCents: 2500 },
+    {
+      id: "pi-4",
+      orderId: "pd-2",
+      productId: "ar-1",
+      description: "Armação acetato preta",
+      quantity: 1,
+      unitCents: 29000,
+    },
+    {
+      id: "pi-5",
+      orderId: "pd-2",
+      productId: "ar-3",
+      description: "Lentes multifocais (par)",
+      quantity: 1,
+      unitCents: 38000,
+    },
+    { id: "pi-6", orderId: "pd-2", productId: "ar-4", description: "Estojo e flanela", quantity: 1, unitCents: 2500 },
+    {
+      id: "pi-7",
+      orderId: "pd-3",
+      productId: "ar-3",
+      description: "Par de lentes com antirreflexo",
+      quantity: 1,
+      unitCents: 38000,
+    },
+    { id: "pi-8", orderId: "pd-4", productId: null, description: "Conserto e ajuste", quantity: 1, unitCents: 4000 },
+    {
+      id: "pi-9",
+      orderId: "pd-5",
+      productId: "ar-1",
+      description: "Armação acetato preta",
+      quantity: 1,
+      unitCents: 29000,
+    },
+    {
+      id: "pi-10",
+      orderId: "pd-5",
+      productId: null,
+      description: "Lentes solares com grau (par)",
+      quantity: 1,
+      unitCents: 35000,
+    },
+    { id: "pi-11", orderId: "pd-5", productId: "ar-4", description: "Estojo e flanela", quantity: 1, unitCents: 2500 },
+  ];
+  const orderEvents = orders.flatMap((o) => {
+    const list = [
+      {
+        id: `pe-${o.id}-1`,
+        orderId: o.id,
+        description: o.downCents
+          ? `Pedido aberto com sinal de R$ ${(o.downCents / 100).toFixed(2).replace(".", ",")}`
+          : "Pedido aberto",
+        actorId: "u-lia",
+        createdAt: o.createdAt,
+      },
+    ];
+    if (o.stage === "terceiro")
+      list.push({
+        id: `pe-${o.id}-2`,
+        orderId: o.id,
+        description: "Etapa: no laboratório ou fornecedor",
+        actorId: "u-otavio",
+        createdAt: at(-6, 15),
+      });
+    if (o.readyAt)
+      list.push({
+        id: `pe-${o.id}-3`,
+        orderId: o.id,
+        description: "Etapa: pronto para retirar",
+        actorId: "u-otavio",
+        createdAt: o.readyAt,
+      });
+    if (o.deliveredAt)
+      list.push({
+        id: `pe-${o.id}-4`,
+        orderId: o.id,
+        description: "Entregue ao cliente",
+        actorId: "u-lia",
+        createdAt: o.deliveredAt,
+      });
+    return list;
+  });
+  const opticStock = [
+    ...[
+      ["ar-1", 7],
+      ["ar-2", 1],
+      ["ar-4", 33],
+    ].map(([productId, qty]) => ({
+      id: `sm-in-${productId}`,
+      productId: productId as string,
+      kind: "entrada" as const,
+      quantity: qty as number,
+      unitCostCents: frames.find((f) => f.id === productId)!.costCents ?? null,
+      saleId: null,
+      orderId: null,
+      reason: "Estoque inicial",
+      createdBy: "u-ana",
+      createdAt: at(-60, 9),
+    })),
+    ...orderItems
+      .filter((i) => i.productId && frames.find((f) => f.id === i.productId)!.trackStock)
+      .map((i) => ({
+        id: `sm-${i.id}`,
+        productId: i.productId!,
+        kind: "venda" as const,
+        quantity: -i.quantity,
+        unitCostCents: null,
+        saleId: null,
+        orderId: i.orderId,
+        reason: `Pedido nº ${orders.find((o) => o.id === i.orderId)!.number}`,
+        createdBy: "u-lia",
+        createdAt: orders.find((o) => o.id === i.orderId)!.createdAt,
+      })),
+  ];
+  const opticAccounts: Account[] = [
+    receivable({
+      id: "a-pd-1-s",
+      clientId: "ot-4",
+      description: "Pedido nº 1 — sinal",
+      origin: "pedido",
+      amountCents: 30000,
+      dueDate: day(-14),
+      createdAt: at(-14, 10),
+      orderId: "pd-1",
+    }),
+    receivable({
+      id: "a-pd-1-r",
+      clientId: "ot-4",
+      description: "Pedido nº 1 — restante",
+      origin: "pedido",
+      amountCents: 39500,
+      dueDate: day(-5),
+      createdAt: at(-5, 11),
+      orderId: "pd-1",
+    }),
+    receivable({
+      id: "a-pd-2-s",
+      clientId: "ot-1",
+      description: "Pedido nº 2 — sinal",
+      origin: "pedido",
+      amountCents: 30000,
+      dueDate: day(-8),
+      createdAt: at(-8, 10),
+      orderId: "pd-2",
+    }),
+    receivable({
+      id: "a-pd-5-s",
+      clientId: "ot-4",
+      description: "Pedido nº 5 — sinal",
+      origin: "pedido",
+      amountCents: 20000,
+      dueDate: today,
+      createdAt: at(0, 10),
+      orderId: "pd-5",
+    }),
+  ];
+  const otica: CompanyData = {
+    company: {
+      ...EMPTY_PROFILE,
+      id: PREVIEW_COMPANY_IDS.otica,
+      name: "Ótica Kennedy",
+      segment: "pedidos",
+      phone: "(11) 4002-8080",
+      address: "Av. Presidente Kennedy, 2900 — São Caetano do Sul",
+      brandColor: "#7c3aed",
+    },
+    members: [
+      { userId: "u-ana", name: "Ana Souza", email: "ana@oticakennedy.exemplo", roles: ["admin"] },
+      { userId: "u-lia", name: "Lia Moraes", email: "lia@oticakennedy.exemplo", roles: ["recepcao"] },
+      { userId: "u-otavio", name: "Otávio Reis", email: "otavio@oticakennedy.exemplo", roles: ["profissional"] },
+      { userId: "u-fabio", name: "Fábio Teles", email: "fabio@oticakennedy.exemplo", roles: ["financeiro"] },
+    ],
+    clients: opticClients,
+    items: [],
+    ...empty(),
+    resources: [{ id: "r-otavio", name: "Otávio Reis", userId: "u-otavio", active: true, workHours: {} }],
+    services: [],
+    products: frames,
+    stockMovements: opticStock,
+    prescriptions,
+    orders,
+    orderItems,
+    orderEvents,
+    cashSessions: [
+      {
+        id: "cx-ot-hoje",
+        openedBy: "u-lia",
+        openedAt: at(0, 9),
+        openingCents: 10000,
+        closedBy: null,
+        closedAt: null,
+        expectedCents: null,
+        countedCents: null,
+        notes: "",
+      },
+    ],
+    accounts: opticAccounts,
+    movements: [
+      ["a-pd-1-s", 30000, "pix", at(-14, 10), null],
+      ["a-pd-1-r", 39500, "cartao_credito", at(-5, 11), null],
+      ["a-pd-2-s", 30000, "dinheiro", at(-8, 10), null],
+      ["a-pd-5-s", 20000, "pix", at(0, 10), "cx-ot-hoje"],
+    ].map(([accountId, amountCents, method, createdAt, cashSessionId]) => ({
+      id: `m-${accountId}`,
+      accountId: accountId as string,
+      direction: "entrada" as const,
+      amountCents: amountCents as number,
+      paidOn: (createdAt as string).slice(0, 10),
+      method: method as Movement["method"],
+      registeredBy: "u-lia",
+      createdAt: createdAt as string,
+      undoneAt: null,
+      undoneBy: null,
+      undoReason: null,
+      cashSessionId: cashSessionId as string | null,
+    })),
+  };
+
+  return [aurora, horizonte, clinica, pet, salao, pilates, oficina, loja, otica];
 }
