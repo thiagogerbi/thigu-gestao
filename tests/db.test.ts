@@ -2482,3 +2482,48 @@ describe("pedidos no banco", () => {
     expect(Number(close.r.expected_cents)).toBe(10000 + 30000); // só o que entrou em dinheiro
   });
 });
+
+describe("permissões das funções", () => {
+  it("visitante sem login só executa as funções das páginas públicas; quem entrou continua executando as dele", async () => {
+    const r = await rows<{ proname: string }>(
+      `select distinct p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and has_function_privilege('anon', p.oid, 'execute') order by 1`,
+    );
+    expect(r.map((x) => x.proname)).toEqual([
+      "public_approve_work_order",
+      "public_book",
+      "public_booking_info",
+      "public_busy",
+      "public_work_order",
+    ]);
+    for (const fn of ["create_company", "register_movement", "is_member", "open_order", "my_invites"]) {
+      expect(
+        (
+          await one<{ ok: boolean }>(
+            `select bool_and(has_function_privilege('authenticated', p.oid, 'execute')) as ok
+           from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = $1`,
+            [fn],
+          )
+        ).ok,
+      ).toBe(true);
+    }
+    expect(
+      (
+        await one<{ ok: boolean }>(
+          "select has_function_privilege('authenticated', 'public._order_for(uuid, text)', 'execute') as ok",
+        )
+      ).ok,
+    ).toBe(false);
+    expect(
+      await rows(
+        `select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname = 'public' and p.prorettype = 'trigger'::regtype and has_function_privilege('authenticated', p.oid, 'execute')`,
+      ),
+    ).toEqual([]);
+    const loose = await rows(
+      `select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and not exists (select 1 from unnest(coalesce(p.proconfig, '{}')) c where c like 'search_path=%')`,
+    );
+    expect(loose).toEqual([]);
+  });
+});

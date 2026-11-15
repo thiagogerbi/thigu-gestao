@@ -127,7 +127,11 @@ export function StockScreen() {
           label="Buscar"
           type="search"
           value={q}
-          placeholder="Nome, código, código de barras ou carro"
+          placeholder={
+            data.products.some((p) => p.fits)
+              ? "Nome, código, código de barras ou carro"
+              : "Nome, código ou código de barras"
+          }
           onChange={(e) => nav.setQuery({ busca: e.target.value || null })}
           className="pl-10"
         />
