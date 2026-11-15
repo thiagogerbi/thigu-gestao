@@ -211,7 +211,13 @@ export function CashSaleDialog({ onClose }: DialogProps) {
                 setLocalError(null);
               }}
               onKeyDown={onCodeKey}
-              placeholder={stockOn ? "Passe o leitor ou digite nome, código ou carro" : "Digite o nome do produto"}
+              placeholder={
+                !stockOn
+                  ? "Digite o nome do produto"
+                  : data.products.some((p) => p.fits)
+                    ? "Passe o leitor ou digite nome, código ou carro"
+                    : "Passe o leitor ou digite nome ou código"
+              }
               className="pl-10"
               autoComplete="off"
               data-autofocus

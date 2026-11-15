@@ -3,6 +3,7 @@ import { useDialogs } from "@/components/layout/dialog-context";
 import { Button, LinkButton } from "@/components/ui/button";
 import { Badge, Card, EmptyState, InlineAlert, PageHeader } from "@/components/ui/card";
 import { IconArrowLeft } from "@/components/ui/icons";
+import { cx } from "@/components/ui/styles";
 import { useToast } from "@/components/ui/toast";
 import { orderTone } from "@/features/orders/orders-screen";
 import { PrescriptionView } from "@/features/orders/prescription-view";
@@ -56,6 +57,8 @@ export function OrderScreen({ orderId }: { orderId: string }) {
   const events = data.orderEvents
     .filter((e) => e.orderId === o.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // pedido cancelado não tem mais nada a pagar; a linha do tempo diz se o sinal voltou para o cliente
+  const refunded = o.stage === "cancelado" && events.some((e) => e.description.includes("(sinal devolvido)"));
   const stages = BOARD_STAGES.filter((s) => s === o.stage || od.canMoveTo(o, s));
   const readyWa =
     client &&
@@ -178,13 +181,17 @@ export function OrderScreen({ orderId }: { orderId: string }) {
                 <dd className="tabular">{formatBRL(o.totalCents)}</dd>
               </div>
               <div className="flex justify-between">
-                <dt>Sinal pago</dt>
-                <dd className="tabular text-money-700">{formatBRL(o.downCents)}</dd>
+                <dt>{refunded ? "Sinal pago e devolvido" : "Sinal pago"}</dt>
+                <dd className={cx("tabular", refunded ? "text-muted line-through" : "text-money-700")}>
+                  {formatBRL(o.downCents)}
+                </dd>
               </div>
-              <div className="flex justify-between">
-                <dt>{o.stage === "entregue" ? "Restante (na entrega)" : "Falta pagar"}</dt>
-                <dd className="tabular font-semibold">{formatBRL(rest)}</dd>
-              </div>
+              {o.stage !== "cancelado" && (
+                <div className="flex justify-between">
+                  <dt>{o.stage === "entregue" ? "Restante (na entrega)" : "Falta pagar"}</dt>
+                  <dd className="tabular font-semibold">{formatBRL(rest)}</dd>
+                </div>
+              )}
             </dl>
           </Card>
 

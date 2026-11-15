@@ -1,6 +1,7 @@
 "use client";
 import { IconAlert, IconCheckCircle } from "@/components/ui/icons";
 import { cx } from "@/components/ui/styles";
+import { useEffect, useRef } from "react";
 
 export function Card({
   className,
@@ -101,8 +102,16 @@ export function InlineAlert({
     blue: "border-primary/25 bg-primary-50 text-primary-700",
     green: "border-[#bfe8d8] bg-money-50 text-money-700",
   };
+  // Erro de formulário aparece no topo; em janela comprida ele ficaria fora da tela
+  // e a pessoa clicaria em "Salvar" sem ver nada acontecer. Ao surgir, rola até ele.
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (tone === "red" && el?.closest("[role=dialog], form")) el.scrollIntoView({ block: "nearest" });
+  }, [tone]);
   return (
     <div
+      ref={ref}
       role={tone === "red" ? "alert" : "status"}
       className={cx("flex gap-2 rounded-lg border px-3 py-2.5 text-sm", map[tone])}
     >
