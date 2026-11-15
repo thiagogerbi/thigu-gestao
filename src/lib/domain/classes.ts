@@ -1,7 +1,7 @@
 import { addDays, diffDays } from "@/lib/domain/dates";
 import type { Attendance, ClassGroup, Enrollment, ISODate } from "@/lib/domain/types";
 
-/** Turmas e presença: regras puras. O banco tem as mesmas em 20261114000015_classes.sql. */
+/** Turmas e presença: regras puras. O banco tem as mesmas em 20261114000016_classes.sql. */
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 

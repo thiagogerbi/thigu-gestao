@@ -70,6 +70,11 @@ export interface CompanyProfile extends Company {
   bookingEnabled: boolean;
   /** Horário marcado pelo link já entra confirmado. */
   bookingAutoConfirm: boolean;
+  /**
+   * Último dia de acesso pago (renovado com código de ativação). Depois disso a empresa fica
+   * somente leitura. null = sem prazo (prévia).
+   */
+  accessUntil: ISODate | null;
 }
 
 export const EMPTY_PROFILE: Omit<CompanyProfile, "id" | "name"> = {
@@ -88,6 +93,7 @@ export const EMPTY_PROFILE: Omit<CompanyProfile, "id" | "name"> = {
   bookingSlug: null,
   bookingEnabled: false,
   bookingAutoConfirm: false,
+  accessUntil: null,
 };
 
 export interface Member {

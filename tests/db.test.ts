@@ -8,13 +8,21 @@
  */
 import { MODULE_IDS, MODULES, SEGMENT_IDS, SEGMENTS } from "@/lib/domain/segments";
 import { PGlite } from "@electric-sql/pglite";
+import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { randomUUID } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 
-const db = new PGlite();
-const U = { ana: randomUUID(), vend: randomUUID(), fin: randomUUID(), outro: randomUUID() };
+const db = new PGlite({ extensions: { pgcrypto } });
+const U = {
+  ana: randomUUID(),
+  vend: randomUUID(),
+  fin: randomUUID(),
+  outro: randomUUID(),
+  equipe: randomUUID(), // equipe Thigu: gera códigos de ativação
+  novo: randomUUID(), // cliente novo, usado nos testes de ativação
+};
 let A = ""; // empresa Aurora
 let B = ""; // empresa de outro dono
 
@@ -53,6 +61,42 @@ async function newUser(email: string, confirmed = true) {
   );
   return id;
 }
+/** A equipe Thigu gera um código (como depois da compra) e devolve o texto que iria por e-mail. */
+async function issueCode(
+  email: string | null,
+  accessDays = 365,
+  validDays = 30,
+): Promise<{ id: string; code: string }> {
+  return (
+    await as(U.equipe, () =>
+      one<{ r: { id: string; code: string } }>(
+        "select public.generate_activation_code('Cliente de teste', $1, $2, $3) as r",
+        [email, accessDays, validDays],
+      ),
+    )
+  ).r;
+}
+
+type Redeem = { ok: boolean; company_id?: string; access_until?: string; field?: string; message?: string };
+const createCompany = (user: string, name: string, code: string, segment = "geral") =>
+  as(
+    user,
+    async () =>
+      (
+        await one<{ r: Redeem }>("select public.create_company($1, $2, $3::company_segment) as r", [
+          name,
+          code,
+          segment,
+        ])
+      ).r,
+  );
+/** Empresa de teste já ativada: a equipe Thigu gera o código e a pessoa cria a empresa no ramo pedido. */
+async function newCompany(user: string, name: string, segment = "geral") {
+  const r = await createCompany(user, name, (await issueCode(null)).code, segment);
+  if (!r.ok) throw new Error(r.message);
+  return r.company_id!;
+}
+
 const plan3 = JSON.stringify([
   { number: 1, amount_cents: 50000, due_date: "2026-11-20" },
   { number: 2, amount_cents: 50000, due_date: "2026-12-20" },
@@ -86,8 +130,9 @@ beforeAll(async () => {
       JSON.stringify({ full_name: k }),
     ]);
   }
-  A = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Aurora Estúdio') as id"))).id;
-  B = (await as(U.outro, () => one<{ id: string }>("select public.create_company('Horizonte Serviços') as id"))).id;
+  await db.query("insert into public.platform_admins (user_id) values ($1)", [U.equipe]);
+  A = (await createCompany(U.ana, "Aurora Estúdio", (await issueCode("ana@exemplo.test")).code)).company_id!;
+  B = (await createCompany(U.outro, "Horizonte Serviços", (await issueCode(null)).code)).company_id!;
   await inviteAndAccept(A, U.ana, "vend@exemplo.test", "{vendedor}", U.vend);
   await inviteAndAccept(A, U.ana, "fin@exemplo.test", "{financeiro}", U.fin);
 }, 120_000);
@@ -99,7 +144,7 @@ describe("caso de aceitação no banco", () => {
   let firstAccount = "";
 
   it("perfil criado automaticamente e empresa com dono administrador", async () => {
-    expect((await one<{ c: number }>("select count(*)::int c from profiles")).c).toBe(4);
+    expect((await one<{ c: number }>("select count(*)::int c from profiles")).c).toBe(Object.keys(U).length);
     const m = await one<{ roles: string }>(
       "select roles::text from memberships where company_id = $1 and user_id = $2",
       [A, U.ana],
@@ -426,7 +471,7 @@ describe("caso de aceitação no banco", () => {
   });
 });
 
-// Brechas fechadas em 20261114000003_security_fixes.sql. Todas valiam para quem chama o banco
+// Brechas fechadas em 20261114000004_security_fixes.sql. Todas valiam para quem chama o banco
 // direto com a própria sessão, sem passar pela interface.
 describe("correções de permissão", () => {
   const newClientAndDeal = (owner: string, clientOwner = owner) =>
@@ -561,7 +606,7 @@ describe("correções de permissão", () => {
   });
 });
 
-// 20261114000004_invites.sql: ninguém entra numa empresa sem aceitar o convite.
+// 20261114000005_invites.sql: ninguém entra numa empresa sem aceitar o convite.
 describe("convites", () => {
   let carla = "";
   const member = (user: string) =>
@@ -699,7 +744,7 @@ describe("convites", () => {
 });
 
 // Ramo, plano, módulos e os papéis recepção, profissional e caixa
-// (20261114000005_segment_roles.sql e 20261114000006_segments.sql).
+// (20261114000006_segment_roles.sql e 20261114000007_segments.sql).
 describe("ramos, módulos e papéis por ramo", () => {
   let P = ""; // pet shop da Ana
   let recep = "";
@@ -719,7 +764,7 @@ describe("ramos, módulos e papéis por ramo", () => {
     prof = await newUser("prof@pet.test");
     prof2 = await newUser("prof2@pet.test");
     caixa = await newUser("caixa@pet.test");
-    P = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Amigo Fiel', 'pet') as id"))).id;
+    P = await newCompany(U.ana, "Amigo Fiel", "pet");
     await inviteAndAccept(P, U.ana, "recep@pet.test", "{recepcao}", recep);
     await inviteAndAccept(P, U.ana, "prof@pet.test", "{profissional}", prof);
     await inviteAndAccept(P, U.ana, "prof2@pet.test", "{profissional}", prof2);
@@ -977,7 +1022,7 @@ describe("ramos, módulos e papéis por ramo", () => {
   });
 });
 
-// Agenda, serviços e ficha de atendimento (20261114000007 e 20261114000008).
+// Agenda, serviços e ficha de atendimento (20261114000008 e 20261114000009).
 describe("agenda no banco", () => {
   let C = ""; // clínica da Ana
   let recep = "";
@@ -1003,7 +1048,7 @@ describe("agenda no banco", () => {
     recep = await newUser("recep@clinica.test");
     prof1 = await newUser("prof1@clinica.test");
     prof2 = await newUser("prof2@clinica.test");
-    C = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Bem Viver', 'clinica') as id"))).id;
+    C = await newCompany(U.ana, "Bem Viver", "clinica");
     await inviteAndAccept(C, U.ana, "recep@clinica.test", "{recepcao}", recep);
     await inviteAndAccept(C, U.ana, "prof1@clinica.test", "{profissional}", prof1);
     await inviteAndAccept(C, U.ana, "prof2@clinica.test", "{profissional}", prof2);
@@ -1180,7 +1225,7 @@ describe("agenda no banco", () => {
   });
 });
 
-// Pacotes de sessões e mensalidades (20261114000009 e 20261114000010).
+// Pacotes de sessões e mensalidades (20261114000010 e 20261114000011).
 describe("pacotes e mensalidades no banco", () => {
   let P = ""; // clínica da Ana
   let recep = "";
@@ -1221,7 +1266,7 @@ describe("pacotes e mensalidades no banco", () => {
   beforeAll(async () => {
     recep = await newUser("recep@pacotes.test");
     prof = await newUser("prof@pacotes.test");
-    P = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Pacotes', 'clinica') as id"))).id;
+    P = await newCompany(U.ana, "Pacotes", "clinica");
     await inviteAndAccept(P, U.ana, "recep@pacotes.test", "{recepcao}", recep);
     await inviteAndAccept(P, U.ana, "prof@pacotes.test", "{profissional}", prof);
     await as(U.ana, async () => {
@@ -1440,7 +1485,7 @@ describe("horário, caixa, comissões, turmas e agendamento online no banco", ()
     prof2 = await newUser("prof2@salao.test");
     cx = await newUser("cx@salao.test");
     fin = await newUser("fin@salao.test");
-    S = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Salão', 'beleza') as id"))).id;
+    S = await newCompany(U.ana, "Salão", "beleza");
     await inviteAndAccept(S, U.ana, "recep@salao.test", "{recepcao}", recep);
     await inviteAndAccept(S, U.ana, "prof@salao.test", "{profissional}", prof);
     await inviteAndAccept(S, U.ana, "prof2@salao.test", "{profissional}", prof2);
@@ -1731,8 +1776,7 @@ describe("horário, caixa, comissões, turmas e agendamento online no banco", ()
   });
 
   it("turmas: vagas, presença pelo instrutor e matrícula pela recepção", async () => {
-    const P = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Pilates', 'turmas') as id")))
-      .id;
+    const P = await newCompany(U.ana, "Pilates", "turmas");
     const instr = await newUser("instr@pilates.test");
     const rec = await newUser("rec@pilates.test");
     await inviteAndAccept(P, U.ana, "instr@pilates.test", "{profissional}", instr);
@@ -1834,7 +1878,7 @@ describe("oficina no banco", () => {
     mec = await newUser("mec@oficina.test");
     mec2 = await newUser("mec2@oficina.test");
     fin = await newUser("fin@oficina.test");
-    O = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Oficina', 'veiculos') as id"))).id;
+    O = await newCompany(U.ana, "Oficina", "veiculos");
     await inviteAndAccept(O, U.ana, "atend@oficina.test", "{recepcao}", atend);
     await inviteAndAccept(O, U.ana, "mec@oficina.test", "{profissional}", mec);
     await inviteAndAccept(O, U.ana, "mec2@oficina.test", "{profissional}", mec2);
@@ -2121,7 +2165,7 @@ describe("loja no banco", () => {
     vend = await newUser("vend@loja.test");
     cx = await newUser("cx@loja.test");
     fin = await newUser("fin@loja.test");
-    L = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Loja', 'balcao') as id"))).id;
+    L = await newCompany(U.ana, "Loja", "balcao");
     await inviteAndAccept(L, U.ana, "vend@loja.test", "{vendedor}", vend);
     await inviteAndAccept(L, U.ana, "cx@loja.test", "{caixa}", cx);
     await inviteAndAccept(L, U.ana, "fin@loja.test", "{financeiro}", fin);
@@ -2341,7 +2385,7 @@ describe("pedidos no banco", () => {
     tec = await newUser("tec@otica.test");
     tec2 = await newUser("tec2@otica.test");
     fin = await newUser("fin@otica.test");
-    T = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Ótica', 'pedidos') as id"))).id;
+    T = await newCompany(U.ana, "Ótica", "pedidos");
     await inviteAndAccept(T, U.ana, "atend@otica.test", "{recepcao}", atend);
     await inviteAndAccept(T, U.ana, "tec@otica.test", "{profissional}", tec);
     await inviteAndAccept(T, U.ana, "tec2@otica.test", "{profissional}", tec2);
@@ -2556,14 +2600,18 @@ describe("permissões das tabelas", () => {
     for (const p of ["TRUNCATE", "REFERENCES", "TRIGGER"]) expect(await privs("authenticated", p)).toEqual([]);
     expect(await privs("authenticated", "UPDATE")).toEqual(["accounts", "activities", "deals", "notes", "tasks"]);
     expect(await privs("authenticated", "DELETE")).toEqual(["attendance", "commission_rules", "resource_blocks"]);
-    // toda tabela é lida por quem entrou (as políticas filtram as linhas)
-    expect((await privs("authenticated", "SELECT")).length).toBe(
-      (await rows("select 1 from pg_tables where schemaname = 'public'")).length,
+    // toda tabela é lida por quem entrou (as políticas filtram as linhas), menos as tentativas de
+    // código de ativação, que só as funções do sistema acessam
+    const readable = await privs("authenticated", "SELECT");
+    expect(readable).not.toContain("activation_attempts");
+    expect(readable.length).toBe(
+      (await rows("select 1 from pg_tables where schemaname = 'public' and tablename <> 'activation_attempts'")).length,
     );
+    expect(await privs("authenticated", "INSERT")).not.toContain("activation_codes");
   });
 
   it("saldo do estoque e limite do crediário não mudam por fora das funções, nem pelo dono", async () => {
-    const C = (await as(U.ana, () => one<{ id: string }>("select public.create_company('Loja', 'balcao') as id"))).id;
+    const C = await newCompany(U.ana, "Loja", "balcao");
     const prod = await as(U.ana, () =>
       one<{ id: string }>(
         "insert into products (company_id, name, price_cents) values ($1, 'Camisa', 5000) returning id",
@@ -2605,5 +2653,248 @@ describe("permissões das tabelas", () => {
         [prod.id, cli.id],
       ),
     ).toMatchObject({ stock_qty: 3, name: "Davi Lima" });
+  });
+});
+describe("ativação por código (empresa só existe depois da compra)", () => {
+  it("sem código válido não é possível criar empresa", async () => {
+    const r = await createCompany(U.novo, "Loja Nova", "THIGU-AAAA-BBBB-CCCC");
+    expect(r.ok).toBe(false);
+    expect(r.field).toBe("code");
+    expect(r.message).toMatch(/não encontrado/);
+    const n = await one<{ c: number }>("select count(*)::int c from companies where name = 'Loja Nova'");
+    expect(n.c).toBe(0);
+  });
+
+  it("código válido cria a empresa, com o comprador como administrador e prazo de acesso", async () => {
+    const { code } = await issueCode("novo@exemplo.test", 30);
+    // a pessoa pode digitar com espaços e minúsculas
+    const typed = code.toLowerCase().replaceAll("-", " ");
+    const r = await createCompany(U.novo, "Loja Nova", typed);
+    expect(r.ok).toBe(true);
+    const co = await one<{ access_until: string; days: number }>(
+      "select access_until::text, (access_until - public._today())::int as days from companies where id = $1",
+      [r.company_id],
+    );
+    expect(co.days).toBe(30);
+    const m = await one<{ roles: string }>(
+      "select roles::text from memberships where company_id = $1 and user_id = $2",
+      [r.company_id, U.novo],
+    );
+    expect(m.roles).toBe("{admin}");
+
+    // uso único
+    const again = await createCompany(U.novo, "Outra Loja", code);
+    expect(again.ok).toBe(false);
+    expect(again.message).toMatch(/já foi usado/);
+  });
+
+  it("o código fica preso ao e-mail do comprador", async () => {
+    const { code } = await issueCode("comprador@empresa.test");
+    const r = await createCompany(U.outro, "Empresa Errada", code);
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/c\*\*\*@empresa\.test/);
+  });
+
+  it("código vencido ou cancelado não funciona", async () => {
+    const venc = await issueCode(null);
+    await db.query("update activation_codes set valid_until = public._today() - 1 where id = $1", [venc.id]);
+    expect((await createCompany(U.vend, "X Ltda", venc.code)).message).toMatch(/venceu/);
+
+    const canc = await issueCode(null);
+    await as(U.equipe, () => db.query("select public.revoke_activation_code($1)", [canc.id]));
+    expect((await createCompany(U.vend, "X Ltda", canc.code)).message).toMatch(/cancelado/);
+  });
+
+  it("após 5 erros em 15 minutos, bloqueia novas tentativas (mesmo com código certo)", async () => {
+    const quem = randomUUID();
+    await db.query("insert into auth.users (id, email) values ($1, 'tentativas@exemplo.test')", [quem]);
+    for (let i = 0; i < 5; i++) await createCompany(quem, "Tentativa", `THIGU-ERRA-DO00-000${i}`);
+    const { code } = await issueCode(null);
+    const r = await createCompany(quem, "Tentativa", code);
+    expect(r.ok).toBe(false);
+    expect(r.message).toMatch(/Muitas tentativas/);
+    // as 5 tentativas erradas ficam registradas (não são desfeitas com o erro);
+    // a tentativa feita durante o bloqueio não conta de novo, para o bloqueio não se estender sem fim
+    const n = await one<{ c: number }>(
+      "select count(*)::int c from activation_attempts where user_id = $1 and not succeeded",
+      [quem],
+    );
+    expect(n.c).toBe(5);
+  });
+
+  it("só a equipe Thigu gera e enxerga códigos; o código não fica guardado", async () => {
+    await as(U.ana, async () => {
+      await expect(db.query("select public.generate_activation_code('X', null, 30)")).rejects.toThrow(/equipe Thigu/);
+      expect(await rows("select * from activation_codes")).toHaveLength(0);
+      expect(await rows("select * from platform_admins")).toHaveLength(0);
+    });
+    const { id, code } = await issueCode(null);
+    const saved = await one<{ code_hash: string; code_hint: string }>(
+      "select code_hash, code_hint from activation_codes where id = $1",
+      [id],
+    );
+    expect(saved.code_hash).not.toContain(code.replaceAll("-", ""));
+    expect(code.endsWith(saved.code_hint)).toBe(true);
+    // painel: a equipe vê a lista com o nome da empresa que usou cada código; clientes não
+    const list = await as(U.equipe, () =>
+      rows<{ company_name: string | null }>("select * from public.list_activation_codes()"),
+    );
+    expect(list.some((r) => r.company_name === "Aurora Estúdio")).toBe(true);
+    await as(U.ana, async () => {
+      await expect(db.query("select * from public.list_activation_codes()")).rejects.toThrow(/equipe Thigu/);
+    });
+    expect(code).toMatch(/^THIGU-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+  });
+
+  it("empresa vencida fica somente leitura; renovar com novo código libera de novo", async () => {
+    await db.query("update companies set access_until = public._today() - 1 where id = $1", [A]);
+    await as(U.ana, async () => {
+      // consultar continua funcionando
+      expect((await rows("select id from clients where company_id = $1", [A])).length).toBeGreaterThan(0);
+      // registrar algo novo é bloqueado, inclusive dentro das funções do sistema
+      await expect(
+        db.query("insert into clients (company_id, name, owner_id) values ($1, 'Bloqueado', $2)", [A, U.ana]),
+      ).rejects.toThrow(/acesso desta empresa venceu/);
+      // o cliente não consegue estender o próprio prazo editando a empresa
+      await expect(db.query("update companies set access_until = '2099-01-01' where id = $1", [A])).rejects.toThrow();
+    });
+    await as(U.fin, async () => {
+      const acc = await one<{ id: string }>(
+        "select id from accounts where company_id = $1 and kind = 'receber' and canceled_at is null limit 1",
+        [A],
+      );
+      await expect(
+        db.query("select public.register_movement($1, 100, public._today(), 'pix', $2)", [acc.id, randomUUID()]),
+      ).rejects.toThrow(/venceu/);
+    });
+
+    // só o administrador renova
+    const { code } = await issueCode(null, 365);
+    await as(U.vend, async () => {
+      await expect(db.query("select public.apply_activation_code($1, $2)", [A, code])).rejects.toThrow(/administrador/);
+    });
+    const r = await as(
+      U.ana,
+      async () => (await one<{ r: Redeem }>("select public.apply_activation_code($1, $2) as r", [A, code])).r,
+    );
+    expect(r.ok).toBe(true);
+    const days = await one<{ d: number }>(
+      "select (access_until - public._today())::int d from companies where id = $1",
+      [A],
+    );
+    expect(days.d).toBe(365);
+    await as(U.ana, () =>
+      db.query("insert into clients (company_id, name, owner_id) values ($1, 'Liberado', $2)", [A, U.ana]),
+    );
+  });
+});
+
+describe("ativação por código junto com os ramos", () => {
+  let O = ""; // ótica criada com código
+  let cli = "";
+  let prod = "";
+
+  it("a empresa nasce com o código E o ramo; sem código não nasce", async () => {
+    const bad = await createCompany(U.novo, "Ótica Sem Código", "THIGU-AAAA-BBBB-CCCC", "pedidos");
+    expect(bad).toMatchObject({ ok: false, field: "code" });
+    const { code } = await issueCode(null, 90);
+    const r = await createCompany(U.ana, "Ótica Central", code, "pedidos");
+    expect(r.ok).toBe(true);
+    O = r.company_id!;
+    const co = await one<{ segment: string; days: number }>(
+      "select segment::text, (access_until - public._today())::int as days from companies where id = $1",
+      [O],
+    );
+    expect(co).toEqual({ segment: "pedidos", days: 90 });
+    expect(
+      (await as(U.ana, () => one<{ ok: boolean }>("select public.module_enabled($1, 'pedidos') as ok", [O]))).ok,
+    ).toBe(true);
+    // só existe uma forma de criar empresa
+    const sigs = await rows<{ sig: string }>(
+      "select oid::regprocedure::text as sig from pg_proc where proname = 'create_company' and pronamespace = 'public'::regnamespace",
+    );
+    expect(sigs.map((x) => x.sig)).toEqual(["create_company(text,text,company_segment)"]);
+    // quem está logado não chama o auxiliar que confere o código
+    expect(
+      (
+        await one<{ ok: boolean }>(
+          "select bool_or(has_function_privilege('authenticated', oid, 'execute')) as ok from pg_proc where proname = '_take_code'",
+        )
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("toda tabela com dados de empresa tem a trava de acesso vencido, menos equipe e convites", async () => {
+    const missing = await rows<{ t: string }>(
+      `select c.table_name as t from information_schema.columns c
+       join information_schema.tables tb on tb.table_schema = c.table_schema and tb.table_name = c.table_name and tb.table_type = 'BASE TABLE'
+       where c.table_schema = 'public' and c.column_name = 'company_id'
+         and not exists (select 1 from pg_trigger g where g.tgrelid = format('public.%I', c.table_name)::regclass and g.tgname = c.table_name || '_guard_active')
+       order by 1`,
+    );
+    expect(missing.map((x) => x.t)).toEqual(["activation_codes", "invites", "memberships"]);
+  });
+
+  it("vencida: lê tudo, mas não grava nos módulos novos nem pelas páginas públicas; renovar libera", async () => {
+    await as(U.ana, async () => {
+      cli = (
+        await one<{ id: string }>(
+          "insert into clients (company_id, name, owner_id) values ($1, 'Rosa', $2) returning id",
+          [O, U.ana],
+        )
+      ).id;
+      prod = (
+        await one<{ id: string }>(
+          "insert into products (company_id, name, price_cents) values ($1, 'Armação', 30000) returning id",
+          [O],
+        )
+      ).id;
+      await db.query("select public.stock_entry($1, 2, 12000, '')", [prod]);
+    });
+    await db.query("update companies set access_until = public._today() - 1 where id = $1", [O]);
+    await as(U.ana, async () => {
+      // consultar continua funcionando
+      expect(await rows("select id from products where company_id = $1", [O])).toHaveLength(1);
+      expect(await rows("select id from stock_movements where company_id = $1", [O])).toHaveLength(1);
+      // gravar direto ou pelas funções dos módulos novos, não
+      await expect(
+        db.query("insert into products (company_id, name, price_cents) values ($1, 'Lente', 1000)", [O]),
+      ).rejects.toThrow(/acesso desta empresa venceu/);
+      await expect(db.query("select public.stock_entry($1, 1, 12000, '')", [prod])).rejects.toThrow(/venceu/);
+      await expect(db.query("select public.open_cash($1, 0)", [O])).rejects.toThrow(/venceu/);
+      await expect(
+        db.query("select public.open_order($1, 'Óculos', '', '2099-01-10', null, null, $2::jsonb, 0, null, $3)", [
+          cli,
+          JSON.stringify([{ product_id: null, description: "Lente", quantity: 1, unit_cents: 1000 }]),
+          randomUUID(),
+        ]),
+      ).rejects.toThrow(/venceu/);
+      // a equipe continua administrável (o dono precisa disso para renovar)
+      await db.query("select public.invite_member($1, 'socia@otica.test', '{financeiro}'::app_role[])", [O]);
+    });
+    expect((await one<{ s: number }>("select stock_qty as s from products where id = $1", [prod])).s).toBe(2);
+
+    const { code } = await issueCode(null, 30);
+    await as(U.ana, () => db.query("select public.apply_activation_code($1, $2)", [O, code]));
+    await as(U.ana, () => db.query("select public.stock_entry($1, 1, 12000, '')", [prod]));
+    expect((await one<{ s: number }>("select stock_qty as s from products where id = $1", [prod])).s).toBe(3);
+  });
+
+  it("agendamento online de empresa vencida fica indisponível para o público", async () => {
+    const S = await newCompany(U.ana, "Salão Vencido", "beleza");
+    await as(U.ana, () =>
+      db.query("update companies set booking_slug = 'salao-vencido', booking_enabled = true where id = $1", [S]),
+    );
+    const info = async () => {
+      await db.exec("set role anon");
+      try {
+        return (await one<{ i: unknown }>("select public.public_booking_info('salao-vencido') as i")).i;
+      } finally {
+        await db.exec("reset role");
+      }
+    };
+    expect(await info()).not.toBeNull();
+    await db.query("update companies set access_until = public._today() - 1 where id = $1", [S]);
+    expect(await info()).toBeNull();
   });
 });

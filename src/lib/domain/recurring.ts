@@ -5,7 +5,7 @@ import type { Account, Appointment, ISODate, Movement, Package, Subscription } f
 
 /**
  * Pacotes de sessões e mensalidades: regras puras, usadas pela prévia e pelo servidor.
- * O banco tem as mesmas regras em 20261114000010_packages_subscriptions.sql.
+ * O banco tem as mesmas regras em 20261114000011_packages_subscriptions.sql.
  */
 
 export const MAX_SESSIONS = 200;

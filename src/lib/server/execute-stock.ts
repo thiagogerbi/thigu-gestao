@@ -7,7 +7,7 @@ import "server-only";
 
 /**
  * Produtos, estoque, venda no balcão, devolução e crediário na versão real.
- * As funções do banco (20261114000020_stock.sql) conferem de novo papel, estoque, limite e valores.
+ * As funções do banco (20261114000021_stock.sql) conferem de novo papel, estoque, limite e valores.
  */
 
 const fail = (message: string, fieldErrors?: Record<string, string>): ActionResult => ({

@@ -2,7 +2,7 @@ import { addDays, diffDays } from "@/lib/domain/dates";
 import type { EyeValues, ISODate, Order, OrderStage, Prescription } from "@/lib/domain/types";
 
 /**
- * Pedidos com prazo e receita de óculos: regras puras. O banco tem as mesmas em 20261114000022_orders.sql.
+ * Pedidos com prazo e receita de óculos: regras puras. O banco tem as mesmas em 20261114000023_orders.sql.
  */
 
 export const ORDER_STAGES: { id: OrderStage; label: string }[] = [

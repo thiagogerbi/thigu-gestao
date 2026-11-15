@@ -1,6 +1,6 @@
 /**
  * MOTOR DA PRÉVIA — produtos, estoque, venda no balcão, devolução e crediário.
- * Mesmas regras de 20261114000020_stock.sql.
+ * Mesmas regras de 20261114000021_stock.sql.
  */
 import type { Action, ActionResult } from "@/lib/actions/schemas";
 import { MODULE_OFF } from "@/lib/domain/agenda";

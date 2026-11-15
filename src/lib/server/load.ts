@@ -108,7 +108,9 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
   const q = (t: string, cols = "*") => sb.from(t).select(cols).eq("company_id", companyId);
   // cobranças das mensalidades que venceram desde a última visita (não depende de tarefa agendada)
   const generated = await sb.rpc("generate_subscription_charges", { cid: companyId });
-  if (generated.error) console.error("[thigu] não foi possível gerar as cobranças das mensalidades", generated.error);
+  // empresa com acesso vencido não gera cobranças novas (o banco recusa): não é erro
+  if (generated.error && !/acesso desta empresa venceu/.test(generated.error.message ?? ""))
+    console.error("[thigu] não foi possível gerar as cobranças das mensalidades", generated.error);
   // atendimentos dos últimos 120 dias em diante (o histórico mais antigo fica no banco)
   const since = new Date(Date.now() - 120 * 86_400_000).toISOString();
   const [
@@ -153,7 +155,7 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
     sb
       .from("companies")
       .select(
-        "id, name, legal_name, document, phone, email, address, default_terms, logo_data_url, brand_color, menu_color, segment, plan, extra_modules, booking_slug, booking_enabled, booking_auto_confirm",
+        "id, name, legal_name, document, phone, email, address, default_terms, logo_data_url, brand_color, menu_color, segment, plan, extra_modules, booking_slug, booking_enabled, booking_auto_confirm, access_until",
       )
       .eq("id", companyId)
       .single(),
@@ -274,6 +276,7 @@ export async function loadCompanyData(sb: ServerSupabase, companyId: string): Pr
       segment: co.segment ?? "geral",
       plan: co.plan ?? "empresa",
       extraModules: co.extra_modules ?? [],
+      accessUntil: co.access_until ?? null,
     },
     members: rows(members).map((m): Member => ({
       userId: m.user_id,

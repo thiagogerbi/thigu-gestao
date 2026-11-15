@@ -4,7 +4,7 @@ import type { ISODate, ISODateTime, ResourceBlock, WorkHours } from "@/lib/domai
 /**
  * Horário de trabalho, bloqueios e horários livres para o agendamento online.
  * Tudo no horário de Brasília (UTC−3, sem horário de verão desde 2019), igual ao banco
- * (_within_hours e public_book em 20261114000016_online_booking.sql), para não depender do fuso do servidor.
+ * (_within_hours e public_book em 20261114000017_online_booking.sql), para não depender do fuso do servidor.
  */
 
 export const BR_OFFSET_MIN = -180;

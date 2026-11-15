@@ -2,7 +2,7 @@ import { brParts } from "@/lib/domain/hours";
 import type { Appointment, CommissionRule, ISODate, Package, WorkOrder, WorkOrderItem } from "@/lib/domain/types";
 
 /**
- * Comissões. Igual a _commission_of e close_commissions no banco (20261114000014_commissions.sql):
+ * Comissões. Igual a _commission_of e close_commissions no banco (20261114000015_commissions.sql):
  * vale a regra mais específica (profissional + serviço > serviço > profissional > geral); a base é o
  * valor do atendimento "atendido" no mês (horário de Brasília), ou o valor de uma sessão quando foi pelo pacote.
  */

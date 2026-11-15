@@ -2,7 +2,7 @@ import { balanceCents } from "@/lib/domain/accounts";
 import type { Account, Client, CounterSale, Movement, Product } from "@/lib/domain/types";
 
 /**
- * Estoque, venda no balcão e crediário: regras puras. O banco tem as mesmas em 20261114000020_stock.sql.
+ * Estoque, venda no balcão e crediário: regras puras. O banco tem as mesmas em 20261114000021_stock.sql.
  */
 
 /** "Camiseta básica · M · Preta" */

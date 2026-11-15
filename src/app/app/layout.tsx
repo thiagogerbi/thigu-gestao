@@ -2,6 +2,7 @@ import { ThiguLogo } from "@/components/brand/thigu-logo";
 import { AppShell } from "@/components/layout/app-shell";
 import { CreateCompanyForm } from "@/features/auth/create-company-form";
 import { PendingInvites } from "@/features/company/pending-invites";
+import { SignOutButton } from "@/features/auth/sign-out-button";
 import { COMPANY_COOKIE } from "@/lib/server/constants";
 import { loadCompanyData, loadMemberships, loadMyInvites } from "@/lib/server/load";
 import { supabaseConfig } from "@/lib/supabase/config";
@@ -58,11 +59,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {invites.length > 0 ? "Ou cadastre a sua própria empresa" : "Vamos cadastrar sua empresa"}
         </h1>
         <p className="mb-4 mt-1 text-muted">
-          Você será o administrador e poderá convidar sua equipe depois.
-          {invites.length === 0 &&
-            " Se alguém convidou você, o convite aparece aqui quando você entra com o e-mail convidado (já confirmado)."}
+          Use o código de ativação que chegou no seu e-mail depois da compra. Você será o administrador e poderá
+          convidar sua equipe depois.
         </p>
-        <CreateCompanyForm />
+        <CreateCompanyForm salesContact={process.env.NEXT_PUBLIC_THIGU_SALES_URL?.trim() || undefined} />
+        <div className="mt-6 border-t border-line pt-4 text-sm text-muted">
+          <p>
+            Você entrou como <strong className="text-ink">{auth.user.email}</strong>. Se alguém da sua empresa já usa o
+            Thigu, peça para convidar este e-mail em “Minha empresa”: o convite aparece aqui e não é preciso código.
+          </p>
+          <SignOutButton />
+        </div>
       </Centered>
     );
   }

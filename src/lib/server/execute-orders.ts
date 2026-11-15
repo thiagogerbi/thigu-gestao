@@ -7,7 +7,7 @@ import type { ExecContext } from "@/lib/server/execute";
 import "server-only";
 
 /**
- * Pedidos com prazo e receita de óculos na versão real. As funções do banco (20261114000022_orders.sql)
+ * Pedidos com prazo e receita de óculos na versão real. As funções do banco (20261114000023_orders.sql)
  * conferem de novo papel, etapa, estoque, caixa e valores.
  */
 

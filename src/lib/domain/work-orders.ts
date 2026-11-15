@@ -3,7 +3,7 @@ import { brParts } from "@/lib/domain/hours";
 import type { ISODate, ISODateTime, Plan, WorkOrder, WorkOrderItem, WorkOrderStage } from "@/lib/domain/types";
 
 /**
- * Ordem de serviço da oficina: regras puras. O banco tem as mesmas em 20261114000018_work_orders.sql.
+ * Ordem de serviço da oficina: regras puras. O banco tem as mesmas em 20261114000019_work_orders.sql.
  */
 
 export const WO_STAGES: { id: WorkOrderStage; label: string; short: string }[] = [

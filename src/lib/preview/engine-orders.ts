@@ -1,5 +1,5 @@
 /**
- * MOTOR DA PRÉVIA — pedidos com prazo e receita de óculos. Mesmas regras de 20261114000022_orders.sql.
+ * MOTOR DA PRÉVIA — pedidos com prazo e receita de óculos. Mesmas regras de 20261114000023_orders.sql.
  */
 import type { Action, ActionResult } from "@/lib/actions/schemas";
 import { MODULE_OFF } from "@/lib/domain/agenda";

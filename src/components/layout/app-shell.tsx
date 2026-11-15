@@ -25,6 +25,7 @@ import {
 import { Modal } from "@/components/ui/overlay";
 import { cx } from "@/components/ui/styles";
 import { ToastProvider } from "@/components/ui/toast";
+import { AccessBanner } from "@/features/activation/access-status";
 import { ClientDrawer } from "@/features/clients/client-drawer";
 import { PreviewTour, type TourMode } from "@/features/tour/preview-tour";
 import { brandCss } from "@/lib/domain/branding";
@@ -490,6 +491,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="lg:pl-64 print:pl-0">
             <MobileTop />
             <PreviewBanner />
+            <AccessBanner />
             <main
               id="conteudo"
               tabIndex={-1}

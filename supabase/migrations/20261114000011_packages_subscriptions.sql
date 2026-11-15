@@ -233,7 +233,7 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------- Situação do atendimento, agora com pacote
--- Igual à versão de 20261114000008, mais: atendimento com pacote não gera conta (já foi pago no pacote);
+-- Igual à versão de 20261114000009, mais: atendimento com pacote não gera conta (já foi pago no pacote);
 -- usa uma sessão ao ser atendido (ou na falta cobrada), e não passa do total de sessões.
 
 create or replace function public.set_appointment_status(p_appointment uuid, p_status public.appointment_status, p_charge boolean default false)

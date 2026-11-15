@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge, Card, InlineAlert, PageHeader } from "@/components/ui/card";
+import { AccessCard } from "@/features/activation/access-status";
 import { CompanyLetterhead } from "@/features/company/company-letterhead";
 import { CompanyProfileForm } from "@/features/company/company-profile-form";
 import { CompanySegmentCard } from "@/features/company/company-segment-card";
@@ -40,11 +41,12 @@ export function CompanyScreen({ manager }: { manager?: React.ReactNode }) {
       {mode === "previa" && (
         <div className="mb-4">
           <InlineAlert tone="blue" title="Na prévia">
-            Use “Ver como”, no topo da página, para experimentar o sistema com cada papel. Pessoas e e-mails são
+            Use “Experimente como”, no topo da página, para experimentar o sistema com cada papel. Pessoas e e-mails são
             fictícios.
           </InlineAlert>
         </div>
       )}
+      <AccessCard />
       {canDo("empresa.gerenciar") ? (
         <CompanyProfileForm />
       ) : (

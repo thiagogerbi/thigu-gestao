@@ -59,7 +59,7 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 -- A empresa já nasce com o ramo escolhido no cadastro.
-drop function public.create_company(text);
+drop function if exists public.create_company(text);
 create function public.create_company(p_name text, p_segment public.company_segment default 'geral') returns uuid
 language plpgsql security definer set search_path = public as $$
 declare me uuid := public._uid(); cid uuid;
